@@ -6,10 +6,6 @@ import Schedules from '../views/Schedules.vue'
 const routes = [
   {
     path: '/',
-    redirect: '/chambers'
-  },
-  {
-    path: '/chambers',
     name: 'Chambers',
     component: Chambers
   },

@@ -1,24 +1,16 @@
 <template>
   <div class="space-y-6">
     <!-- Header -->
-    <div class="flex justify-between items-center">
-      <div>
-        <h2 class="text-2xl font-bold text-gray-900">Управление камерами</h2>
-        <p class="text-gray-600">Просмотр и управление камерами системы</p>
-      </div>
-      <button class="btn-primary" @click="refreshData">
-        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-        </svg>
-        Обновить
-      </button>
+    <div class="text-center">
+      <h1 class="text-4xl font-bold text-gray-900 mb-4">Система управления фитотроном</h1>
+      <p class="text-xl text-gray-600 mb-8">Выберите камеру для начала работы</p>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading" class="card">
-      <div class="card-body text-center py-8">
-        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500 mx-auto"></div>
-        <p class="mt-2 text-gray-600">Загрузка данных...</p>
+      <div class="card-body text-center py-12">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto"></div>
+        <p class="mt-4 text-gray-600">Загрузка камер...</p>
       </div>
     </div>
 
@@ -36,45 +28,58 @@
       </div>
     </div>
 
-    <!-- Chamber Info -->
-    <div v-if="chamber && !loading" class="card">
-      <div class="card-header">
-        <h3 class="text-lg font-medium text-gray-900">{{ chamber.name }}</h3>
-        <span class="status-online">Активна</span>
-      </div>
-      <div class="card-body">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <h4 class="font-medium text-gray-900 mb-3">Информация о камере</h4>
-            <div class="space-y-2">
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">ID:</span>
-                <span class="text-sm font-medium">{{ chamber.id }}</span>
+    <!-- Chambers Grid -->
+    <div v-if="chambers.length > 0 && !loading" class="max-w-4xl mx-auto">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div v-for="chamber in chambers" :key="chamber.id" class="relative group">
+          <div 
+            @click="handleChamberSelect(chamber)"
+            :class="[
+              'card cursor-pointer transition-all duration-200 transform hover:scale-105',
+              selectedChamber?.id === chamber.id ? 'ring-2 ring-primary-500 shadow-lg' : 'hover:shadow-md'
+            ]"
+          >
+            <div class="card-body text-center py-8">
+              <!-- Chamber Icon -->
+              <div class="w-16 h-16 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg class="w-8 h-8 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+                </svg>
               </div>
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Название:</span>
-                <span class="text-sm font-medium">{{ chamber.name }}</span>
+              
+              <!-- Chamber Name -->
+              <h3 class="text-xl font-semibold text-gray-900 mb-2">{{ chamber.name }}</h3>
+              
+              <!-- Chamber Info -->
+              <div class="space-y-2 text-sm text-gray-600">
+                <div class="flex justify-center items-center">
+                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                  </svg>
+                  {{ chamber.settings?.light_sectors || 0 }} секторов освещения
+                </div>
+                <div class="flex justify-center items-center">
+                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
+                  </svg>
+                  {{ chamber.settings?.watering_sectors || 0 }} секторов полива
+                </div>
+                <div class="flex justify-center items-center">
+                  <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                  </svg>
+                  Создана {{ formatDate(chamber.created_at) }}
+                </div>
               </div>
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Создана:</span>
-                <span class="text-sm font-medium">{{ formatDate(chamber.created_at) }}</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Обновлена:</span>
-                <span class="text-sm font-medium">{{ formatDate(chamber.updated_at) }}</span>
-              </div>
-            </div>
-          </div>
-          <div>
-            <h4 class="font-medium text-gray-900 mb-3">Статус системы</h4>
-            <div class="space-y-2">
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Подключение к API:</span>
-                <span class="status-online">Активно</span>
-              </div>
-              <div class="flex justify-between">
-                <span class="text-sm text-gray-600">Последняя синхронизация:</span>
-                <span class="text-sm font-medium">{{ formatDate(Date.now() / 1000) }}</span>
+              
+              <!-- Selection Indicator -->
+              <div v-if="selectedChamber?.id === chamber.id" class="mt-4">
+                <div class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+                  <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+                  </svg>
+                  Выбрана
+                </div>
               </div>
             </div>
           </div>
@@ -82,24 +87,87 @@
       </div>
     </div>
 
-    <!-- API Status -->
-    <div class="card">
-      <div class="card-header">
-        <h3 class="text-lg font-medium text-gray-900">Состояние API</h3>
+    <!-- Navigation Cards -->
+    <div v-if="hasSelectedChamber && !loading" class="max-w-4xl mx-auto">
+      <div class="text-center mb-8">
+        <h2 class="text-2xl font-bold text-gray-900 mb-2">Рабочие разделы</h2>
+        <p class="text-gray-600">Выберите раздел для работы с камерой "{{ selectedChamber?.name }}"</p>
       </div>
-      <div class="card-body">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="text-center">
-            <div class="text-2xl font-bold text-primary-600">{{ apiStats.chambers }}</div>
-            <div class="text-sm text-gray-600">Камер</div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Scenarios Card -->
+        <router-link 
+          to="/scenarios" 
+          class="card hover:shadow-lg transition-shadow duration-200 transform hover:scale-105"
+        >
+          <div class="card-body text-center py-8">
+            <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v18m0 0l-4-4m4 4l4-4M3 12h18"></path>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">Библиотека сценариев</h3>
+            <p class="text-gray-600 mb-4">Создание и управление 24-часовыми циклами выращивания</p>
+            <div class="inline-flex items-center text-green-600 font-medium">
+              Перейти
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </div>
           </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-success-600">{{ apiStats.schedules }}</div>
-            <div class="text-sm text-gray-600">Расписаний</div>
+        </router-link>
+
+        <!-- Schedules Card -->
+        <router-link 
+          to="/schedules" 
+          class="card hover:shadow-lg transition-shadow duration-200 transform hover:scale-105"
+        >
+          <div class="card-body text-center py-8">
+            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg class="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+              </svg>
+            </div>
+            <h3 class="text-xl font-semibold text-gray-900 mb-2">Планировщик экспериментов</h3>
+            <p class="text-gray-600 mb-4">Создание и управление расписаниями научных экспериментов</p>
+            <div class="inline-flex items-center text-blue-600 font-medium">
+              Перейти
+              <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+              </svg>
+            </div>
           </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-warning-600">{{ apiStats.scenarios }}</div>
-            <div class="text-sm text-gray-600">Сценариев</div>
+        </router-link>
+      </div>
+    </div>
+
+    <!-- Empty State -->
+    <div v-if="chambers.length === 0 && !loading && !error" class="card">
+      <div class="card-body text-center py-12">
+        <svg class="w-16 h-16 text-gray-400 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path>
+        </svg>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Камеры не найдены</h3>
+        <p class="text-gray-600 mb-4">Не удалось найти доступные камеры в системе</p>
+        <button class="btn-primary" @click="refreshChambers">
+          <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          Обновить
+        </button>
+      </div>
+    </div>
+
+    <!-- System Status -->
+    <div v-if="!loading" class="max-w-2xl mx-auto">
+      <div class="bg-gray-50 rounded-lg p-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center">
+            <div class="w-3 h-3 bg-green-500 rounded-full mr-3 animate-pulse"></div>
+            <span class="text-sm font-medium text-gray-700">Система работает</span>
+          </div>
+          <div class="text-xs text-gray-500">
+            Камер доступно: {{ chambersCount }}
           </div>
         </div>
       </div>
@@ -108,80 +176,43 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { onMounted } from 'vue'
+import { useChambers } from '../composables/useChambers'
 
-// Reactive data
-const chamber = ref<any>(null)
-const loading = ref(false)
-const error = ref<string | null>(null)
-const apiStats = ref({
-  chambers: 0,
-  schedules: 0,
-  scenarios: 0
-})
-
-// API base URL
-const API_BASE = 'http://localhost:8000'
+// Use chambers composable
+const { 
+  chambers, 
+  selectedChamber, 
+  loading, 
+  error, 
+  chambersCount,
+  hasSelectedChamber,
+  fetchChambers, 
+  selectChamber,
+  refreshChambers 
+} = useChambers()
 
 // Methods
-const fetchChamber = async () => {
-  try {
-    loading.value = true
-    error.value = null
-    
-    const response = await fetch(`${API_BASE}/chamber`)
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    chamber.value = data
-  } catch (err) {
-    error.value = err instanceof Error ? err.message : 'Неизвестная ошибка'
-    console.error('Error fetching chamber:', err)
-  } finally {
-    loading.value = false
-  }
-}
-
-const fetchStats = async () => {
-  try {
-    const [chambersRes, schedulesRes, scenariosRes] = await Promise.all([
-      fetch(`${API_BASE}/chamber`),
-      fetch(`${API_BASE}/schedules`),
-      fetch(`${API_BASE}/scenarios`)
-    ])
-    
-    if (chambersRes.ok) {
-      apiStats.value.chambers = 1 // Single chamber endpoint
-    }
-    
-    if (schedulesRes.ok) {
-      const schedules = await schedulesRes.json()
-      apiStats.value.schedules = schedules.length
-    }
-    
-    if (scenariosRes.ok) {
-      const scenarios = await scenariosRes.json()
-      apiStats.value.scenarios = scenarios.length
-    }
-  } catch (err) {
-    console.error('Error fetching stats:', err)
-  }
+const handleChamberSelect = (chamber: any) => {
+  selectChamber(chamber)
 }
 
 const formatDate = (timestamp: number) => {
-  return new Date(timestamp * 1000).toLocaleString('ru-RU')
+  return new Date(timestamp * 1000).toLocaleDateString('ru-RU')
 }
 
-const refreshData = async () => {
-  await Promise.all([
-    fetchChamber(),
-    fetchStats()
-  ])
-}
-
+// Load chambers on mount
 onMounted(() => {
-  refreshData()
+  fetchChambers()
 })
-</script> 
+</script>
+
+<style scoped>
+.card:hover {
+  transform: translateY(-2px);
+}
+
+.router-link-active .card {
+  border-color: #3b82f6;
+}
+</style> 
