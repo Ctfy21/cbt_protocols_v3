@@ -175,9 +175,8 @@ class Climate(BaseModel):
     temperature_inside: float = Field()
     temperature_outside: float = Field()
     temperature_set: int = Field()
-    fan_mode: Literal["off", "auto", "low", "medium", "high"] = Field()
-    power_mode: Literal["off", "cool", "dry", "auto", "heat"] = Field()
-    swing_mode: Literal["off", "horizontal", "vertical"] = Field()
+    fan_mode: int = Field()
+    mode: Literal["off", "cool", "dry", "auto", "heat"] = Field()
 
 class Device(BaseModel):
     device_id: str = Field()

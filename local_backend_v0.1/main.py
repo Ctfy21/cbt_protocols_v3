@@ -24,6 +24,9 @@ from esphomeAPI import (
     esphome_manager, initialize_esphome_devices, get_chamber_esphome_devices, 
     toggle_esphome_switch
 )
+from mideaAPI import (
+    midea_manager, initialize_midea_devices, get_chamber_midea_devices
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -72,10 +75,10 @@ async def create_default_chambers():
     except Exception as e:
         print(f"❌ Error creating default chambers: {e}")
 
-async def initialize_all_esphome_devices():
-    """Initialize ESPHome devices for all chambers"""
+async def initialize_all_devices():
+    """Initialize ESPHome and Midea devices for all chambers"""
     try:
-        logger.info("Initializing ESPHome devices for all chambers")
+        logger.info("Initializing ESPHome and Midea devices for all chambers")
         chambers = list(database.chambers.find())
         
         all_controllers = []
@@ -87,8 +90,14 @@ async def initialize_all_esphome_devices():
         await initialize_esphome_devices(all_controllers)
         logger.info("ESPHome devices initialized successfully")
         
+        # Initialize Midea connections
+        discovered_devices = discover()
+        ip_addresses = [i['ip_address'] for i in discovered_devices.values()]
+        await initialize_midea_devices(ip_addresses)
+        logger.info("Midea devices initialized successfully")
+        
     except Exception as e:
-        logger.error(f"Error initializing ESPHome devices: {e}")
+        logger.error(f"Error initializing devices: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -101,8 +110,8 @@ async def lifespan(app: FastAPI):
     # Create default chamber if none exists
     await create_default_chambers()
     
-    # Initialize ESPHome devices
-    await initialize_all_esphome_devices()
+    # Initialize ESPHome and Midea devices
+    await initialize_all_devices()
     
     yield
     
@@ -232,7 +241,7 @@ async def apply_controller(chamber_id: str, controller: DefineController):
     if result.modified_count == 0:
         raise HTTPException(status_code=500, detail="Failed to apply controller")
     
-    # Initialize ESPHome devices for new controllers
+    # Initialize ESPHome and Midea devices for new controllers
     try:
         await initialize_esphome_devices(controllers_dict)
         logger.info(f"ESPHome devices initialized for chamber {chamber_id}")
@@ -255,14 +264,14 @@ async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
             logger.warning(f"No controllers found for chamber {chamber_id}")
             return DashboardState(chamber_id=chamber_id, esp_devices=[], midea_devices=[])
         
-        # Get ESPHome devices for this chamber
+        # Get ESPHome and Midea devices for this chamber
         esp_devices = await get_chamber_esphome_devices(controllers)
-        # midea_devices = await get_chamber_midea_devices(controllers)
+        midea_devices = await get_chamber_midea_devices(controllers)
 
         return DashboardState(
             chamber_id=chamber_id,
             esp_devices=esp_devices,
-            midea_devices=[],
+            midea_devices=midea_devices,
             last_update=int(time()),
             auto_mode=True
         )
@@ -387,6 +396,30 @@ async def reinitialize_chamber_esphome(chamber_id: str):
         logger.error(f"Error reinitializing ESPHome devices: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.post("/chambers/{chamber_id}/reinitialize_all")
+async def reinitialize_chamber_all_devices(chamber_id: str):
+    """Reinitialize all devices (ESPHome and Midea) for a specific chamber"""
+    if not ObjectId.is_valid(chamber_id):
+        raise HTTPException(status_code=400, detail="Invalid chamber ID")
+    
+    try:
+        chamber = database.chambers.find_one({"_id": ObjectId(chamber_id)})
+        if not chamber:
+            raise HTTPException(status_code=404, detail="Chamber not found")
+        
+        controllers = chamber.get("controllers", [])
+        await initialize_esphome_devices(controllers)
+        discovered_devices = discover()
+        ip_addresses = [i['ip_address'] for i in discovered_devices.values()]
+        await initialize_midea_devices(ip_addresses)
+        
+        return {"success": True, "message": "All devices reinitialized"}
+        
+    except Exception as e:
+        logger.error(f"Error reinitializing all devices: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/esphome/devices")
 async def get_all_esphome_devices():
     """Get all ESPHome devices status"""
@@ -447,6 +480,59 @@ async def reconnect_esphome_device(device_name: str):
     except Exception as e:
         logger.error(f"Error reconnecting ESPHome device {device_name}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/midea/devices/{device_id}/set_temperature")
+async def set_midea_temperature(device_id: str, temperature: float):
+    """Set target temperature for Midea device"""
+    try:
+        success = await midea_manager.set_target_temperature(device_id, temperature)
+        if success:
+            return {"success": True, "device_id": device_id, "temperature": temperature}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to set temperature")
+    except Exception as e:
+        logger.error(f"Error setting temperature for Midea device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/midea/devices/{device_id}/set_fan_speed")
+async def set_midea_fan_speed(device_id: str, fan_speed: int):
+    """Set fan speed for Midea device"""
+    try:
+        success = await midea_manager.set_fan_speed(device_id, fan_speed)
+        if success:
+            return {"success": True, "device_id": device_id, "fan_speed": fan_speed}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to set fan speed")
+    except Exception as e:
+        logger.error(f"Error setting fan speed for Midea device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/midea/devices/{device_id}/set_mode")
+async def set_midea_mode(device_id: str, mode: int):
+    """Set operating mode for Midea device"""
+    try:
+        success = await midea_manager.set_mode(device_id, mode)
+        if success:
+            return {"success": True, "device_id": device_id, "mode": mode}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to set mode")
+    except Exception as e:
+        logger.error(f"Error setting mode for Midea device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/midea/devices/{device_id}/state")
+async def get_midea_device_state(device_id: str):
+    """Get current state of Midea device"""
+    try:
+        state = await midea_manager.get_device_state(device_id)
+        if state:
+            return {"device_id": device_id, "state": state}
+        else:
+            raise HTTPException(status_code=404, detail="Device not found")
+    except Exception as e:
+        logger.error(f"Error getting state for Midea device {device_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # Schedule endpoints
 @app.get("/schedules", response_model=List[Schedule])
