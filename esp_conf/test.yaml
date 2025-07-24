@@ -1,0 +1,1587 @@
+# packages:
+#   light_package_script_1: !include { file: light-script.yaml, vars: { counter_light: 0, light_name_with_room: midi, type_of_light: white, initial_value: 0, array_length: 8 }}
+#   light_package_script_2: !include { file: light-script.yaml, vars: { counter_light: 1, light_name_with_room: midi, type_of_light: red, initial_value: 0, array_length: 8  }}
+#   light_package_script_3: !include { file: light-script.yaml, vars: { counter_light: 2, light_name_with_room: midi, type_of_light: far_red, initial_value: 0, array_length: 8 }}
+#   light_package_script_4: !include { file: light-script.yaml, vars: { counter_light: 3, light_name_with_room: midi, type_of_light: blue, initial_value: 0, array_length: 8 }}
+#   light_package_script_5: !include { file: light-script.yaml, vars: { counter_light: 4, light_name_with_room: midi, type_of_light: sunlike, initial_value: 0, array_length: 8 }}
+
+  # temperature_package_script: !include { file: temperature-script.yaml, vars: {room_name: midi, climate_name: midi_1, climate_entity_id: climate.152832117041816_climate}}
+
+  # watering_package1: !include { file: watering.yaml, vars: { relay_watering_pin_id: water_pump_watering, room_name: midi, counter_id: 1, expand_time_watering: 1 }}
+
+
+  # Global variables for storing parsed JSON values
+
+
+  
+globals:
+
+  - id: scenarios_json
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: schedule_scenarios_json
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+
+  - id: schedule_id
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: auto_mode
+    type: bool
+    restore_value: yes
+    initial_value: 'false'
+    
+  - id: time_start
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: time_end
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: chamber_id
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: schedule_reference
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: created_at
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: updated_at
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: status
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: steps_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: steps_json
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+    
+  - id: control_modes_json
+    type: std::string
+    restore_value: yes
+    initial_value: ""
+
+  # Global variables for storing sector IDs
+  - id: sector_ids_temperature_array
+    type: std::vector<std::string>
+    restore_value: no
+    
+  - id: sector_ids_humidity_array
+    type: std::vector<std::string>
+    restore_value: no
+    
+  - id: sector_ids_co2_array
+    type: std::vector<std::string>
+    restore_value: no
+    
+  - id: sector_ids_light_array
+    type: std::vector<std::string>
+    restore_value: no
+    
+  - id: sector_ids_watering_array
+    type: std::vector<std::string>
+    restore_value: no
+
+  # Global variables for storing current step values
+  - id: current_step_index
+    type: int
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: current_step_time_start
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: current_step_time_end
+    type: long
+    restore_value: yes
+    initial_value: '0'
+    
+  - id: current_step_temperature
+    type: int
+    restore_value: yes
+    initial_value: '21'
+    
+  - id: current_step_humidity
+    type: int
+    restore_value: yes
+    initial_value: '60'
+    
+  - id: current_step_co2_level
+    type: int
+    restore_value: yes
+    initial_value: '400'
+    
+  # Arrays for light sectors (assuming max 50 sectors)
+  - id: current_step_light_sectors
+    type: float[50]
+    restore_value: yes
+    initial_value: '{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}'
+    
+  - id: current_step_light_sectors_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+    
+  # Arrays for watering sectors (assuming max 50 sectors)
+  - id: current_step_watering_sectors
+    type: float[50]
+    restore_value: yes
+    initial_value: '{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}'
+    
+  - id: current_step_watering_sectors_count
+    type: int
+    restore_value: yes
+    initial_value: '0'
+    
+esphome:
+  name: test
+  friendly_name: midi
+  # Memory optimization settings
+  platformio_options:
+    board_build.flash_mode: qio
+    board_build.f_flash: 80000000L
+    board_build.f_cpu: 240000000L
+    # Increase available heap memory
+    build_flags: 
+      - -DBOARD_HAS_PSRAM
+      - -mfix-esp32-psram-cache-issue
+    
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+    
+    
+    
+
+# Enable logging
+logger:
+
+# Enable debug component for memory monitoring
+debug:
+  update_interval: 5s
+
+web_server:
+  version: 2
+  port: 80
+
+
+http_request:
+  verify_ssl: False
+  timeout: 10s  # Increased timeout to help with large responses
+  useragent: "ESPHome/1.0"  # Set user agent for better compatibility
+
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Moscow
+    servers:
+     - 0.pool.ntp.org
+     - ru.pool.ntp.org
+     - 1.pool.ntp.org
+
+
+text_sensor:
+  - platform: ethernet_info
+    ip_address:
+      name: ip_address
+      id: ip_address
+      on_value:
+        then:
+          - lambda: |-
+              if (x.length() > 0) {
+                id(send_controller_info)->execute();
+              }
+    
+    
+
+interval:
+
+  - interval: 60s
+    then:
+      - http_request.get:
+          url: "http://192.168.53.230:8000/schedules/plc/6881f2dd82037cf38b8d27fa"
+          capture_response: true
+          max_response_buffer_size: 30720
+          on_response:
+            then:
+              - lambda: |-
+                  ESP_LOGI("main", "Response status: %d", response->status_code);
+                  if (body.length() > 0 && response->status_code == 200) {
+                    std::string json_response = body;
+                    ESP_LOGI("main", "JSON stored. Size: %d bytes", json_response.length());
+                    
+                    // Parse JSON and store values in globals - using smaller buffer
+                    DynamicJsonDocument doc(30720);  // Reduced from 51200 to 30720
+                    DeserializationError error = deserializeJson(doc, json_response);
+                    
+                    if (error) {
+                      ESP_LOGE("main", "JSON parsing failed: %s", error.c_str());
+                      return;
+                    }
+                    
+                    // Extract basic values
+                    if (doc.containsKey("_id")) {
+                      id(schedule_id) = doc["_id"].as<std::string>();
+                      ESP_LOGI("main", "Stored _id: %s", id(schedule_id).c_str());
+                    }
+                    
+                    if (doc.containsKey("auto")) {
+                      id(auto_mode) = doc["auto"].as<bool>();
+                      ESP_LOGI("main", "Stored auto: %s", id(auto_mode) ? "true" : "false");
+                    }
+                    
+                    if (doc.containsKey("time_start")) {
+                      id(time_start) = doc["time_start"].as<long>();
+                      ESP_LOGI("main", "Stored time_start: %ld", id(time_start));
+                    }
+                    
+                    if (doc.containsKey("time_end")) {
+                      id(time_end) = doc["time_end"].as<long>();
+                      ESP_LOGI("main", "Stored time_end: %ld", id(time_end));
+                    }
+                    
+                    if (doc.containsKey("chamber_id")) {
+                      id(chamber_id) = doc["chamber_id"].as<std::string>();
+                      ESP_LOGI("main", "Stored chamber_id: %s", id(chamber_id).c_str());
+                    }
+                    
+                    if (doc.containsKey("schedule_id")) {
+                      id(schedule_reference) = doc["schedule_id"].as<std::string>();
+                      ESP_LOGI("main", "Stored schedule_id: %s", id(schedule_reference).c_str());
+                    }
+                    
+                    if (doc.containsKey("created_at")) {
+                      id(created_at) = doc["created_at"].as<long>();
+                      ESP_LOGI("main", "Stored created_at: %ld", id(created_at));
+                    }
+                    
+                    if (doc.containsKey("updated_at")) {
+                      id(updated_at) = doc["updated_at"].as<long>();
+                      ESP_LOGI("main", "Stored updated_at: %ld", id(updated_at));
+                    }
+                    
+                    if (doc.containsKey("status")) {
+                      id(status) = doc["status"].as<std::string>();
+                      ESP_LOGI("main", "Stored status: %s", id(status).c_str());
+                    }
+                    
+                    // Handle scenarios and schedule_scenarios - store as is
+                    if (doc.containsKey("scenarios") && doc.containsKey("schedule_scenarios")) {
+                      // Store scenarios as JSON string
+                      String scenarios_str;
+                      serializeJson(doc["scenarios"], scenarios_str);
+                      id(scenarios_json) = scenarios_str.c_str();
+                      ESP_LOGI("main", "Stored scenarios JSON string (length: %d)", id(scenarios_json).length());
+                      
+                      // Store schedule_scenarios as JSON string
+                      String schedule_scenarios_str;
+                      serializeJson(doc["schedule_scenarios"], schedule_scenarios_str);
+                      id(schedule_scenarios_json) = schedule_scenarios_str.c_str();
+                      ESP_LOGI("main", "Stored schedule_scenarios JSON string (length: %d)", id(schedule_scenarios_json).length());
+                      
+                      // Set steps_count to indicate we have scenario data
+                      id(steps_count) = doc["schedule_scenarios"].size();
+                    }
+                    
+                    // Handle control_modes object
+                    if (doc.containsKey("control_modes") && doc["control_modes"].is<JsonObject>()) {
+                      String control_modes_str;
+                      serializeJson(doc["control_modes"], control_modes_str);
+                      id(control_modes_json) = control_modes_str.c_str();
+                      ESP_LOGI("main", "Stored control_modes JSON string (length: %d)", id(control_modes_json).length());
+                    }
+                    
+                    // Handle sector_ids object
+                    if (doc.containsKey("sector_ids") && doc["sector_ids"].is<JsonObject>()) {
+                       JsonObject sector_ids = doc["sector_ids"];
+                       
+                       // Store temperature sector IDs
+                       if (sector_ids.containsKey("temperature") && sector_ids["temperature"].is<JsonArray>()) {
+                         JsonArray temp_array = sector_ids["temperature"];
+                         id(sector_ids_temperature_array).clear();
+                         for (JsonVariant sector_id : temp_array) {
+                           id(sector_ids_temperature_array).push_back(sector_id.as<std::string>());
+                         }
+                         ESP_LOGI("main", "Stored %d temperature sector_ids", id(sector_ids_temperature_array).size());
+                       }
+                       
+                       // Store humidity sector IDs
+                       if (sector_ids.containsKey("humidity") && sector_ids["humidity"].is<JsonArray>()) {
+                         JsonArray humidity_array = sector_ids["humidity"];
+                         id(sector_ids_humidity_array).clear();
+                         for (JsonVariant sector_id : humidity_array) {
+                           id(sector_ids_humidity_array).push_back(sector_id.as<std::string>());
+                         }
+                         ESP_LOGI("main", "Stored %d humidity sector_ids", id(sector_ids_humidity_array).size());
+                       }
+                       
+                       // Store CO2 sector IDs
+                       if (sector_ids.containsKey("co2") && sector_ids["co2"].is<JsonArray>()) {
+                         JsonArray co2_array = sector_ids["co2"];
+                         id(sector_ids_co2_array).clear();
+                         for (JsonVariant sector_id : co2_array) {
+                           id(sector_ids_co2_array).push_back(sector_id.as<std::string>());
+                         }
+                         ESP_LOGI("main", "Stored %d co2 sector_ids", id(sector_ids_co2_array).size());
+                       }
+                       
+                       // Store light sector IDs
+                       if (sector_ids.containsKey("light") && sector_ids["light"].is<JsonArray>()) {
+                         JsonArray light_array = sector_ids["light"];
+                         id(sector_ids_light_array).clear();
+                         for (JsonVariant sector_id : light_array) {
+                           id(sector_ids_light_array).push_back(sector_id.as<std::string>());
+                         }
+                         ESP_LOGI("main", "Stored %d light sector_ids", id(sector_ids_light_array).size());
+                       }
+                       
+                       // Store watering sector IDs
+                       if (sector_ids.containsKey("watering") && sector_ids["watering"].is<JsonArray>()) {
+                         JsonArray watering_array = sector_ids["watering"];
+                         id(sector_ids_watering_array).clear();
+                         for (JsonVariant sector_id : watering_array) {
+                           id(sector_ids_watering_array).push_back(sector_id.as<std::string>());
+                         }
+                         ESP_LOGI("main", "Stored %d watering sector_ids", id(sector_ids_watering_array).size());
+                       }
+                     }
+                    
+                  // After parsing main JSON, parse and load current step
+                  bool has_steps = doc.containsKey("scenarios") && doc.containsKey("schedule_scenarios");
+                  
+                  // Free up memory by clearing the document
+                  doc.clear();
+                  
+                  if (has_steps) {
+                    // Call script to parse and load current step
+                    id(parse_and_load_current_step).execute();
+                  }
+                  } else {
+                    id(parse_and_load_current_step).execute();
+
+                    ESP_LOGE("main", "HTTP request failed. Body length: %d", body.length());
+                    std::string error_json = "{\"error\": \"Request failed\"}";
+                    ESP_LOGI("main", "Error JSON stored. Size: %d bytes", error_json.length());
+                  }
+
+
+
+
+
+  - interval: 30s
+    then:
+      - lambda: |-
+          for (int i = 0; i < id(sector_ids_light_array).size(); i++) {
+            id(control_analog_output_by_id)->execute(id(sector_ids_light_array)[i], id(current_step_light_sectors)[i]);
+          }
+
+
+# sensor:
+#   - platform: template
+#     name: "Current setup temperature"
+#     id: current_setup_temperature
+
+#   - platform: template
+#     name: "Current setup humidity"
+#     id: current_setup_humidity
+
+#   - platform: template
+#     name: "Current setup CO2"
+#     id: current_setup_co2
+
+
+
+# Enable Home Assistant API
+api:
+
+ota:
+  - platform: esphome
+    password: "796705cc1f7e0aecc489a0aa32b86678"
+
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO17_OUT
+  phy_addr: 0
+
+
+
+
+
+
+
+
+
+i2c:
+  sda: 4
+  scl: 16
+  scan: true
+  id: bus_a
+
+pcf8574:
+ - id: 'pcf8574_hub_out_1'  # for output channel 1-8
+   address: 0x24    #replace by your PCF8574 address
+
+ - id: 'pcf8574_hub_out_relay'  # for output channel 1-8
+   address: 0x27    #replace by your PCF8574 address
+
+uart:
+  id: mod_bus
+  tx_pin: 32
+  rx_pin: 33
+  # debug:
+  #   direction: BOTH
+  #   dummy_receiver: true
+  #   after:
+  #     timeout: 10ms
+  baud_rate: 4800
+  stop_bits: 1
+
+# globals:
+
+#   - id: counter
+#     type: int
+#     restore_value: no
+#     initial_value: '0' 
+
+#   - id: hourWorkVar
+#     type: int
+#     restore_value: no
+#     initial_value: '0'
+
+#   - id: hourCurVar
+#     type: int
+#     restore_value: no
+#     initial_value: '0'
+
+#   - id: hourDayVar
+#     type: int
+#     restore_value: no
+#     initial_value: '0'
+
+#   - id: array_time
+#     type: int[24]
+#     restore_value: no
+#     initial_value: '{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}'
+
+#   - id: temp_intermediate
+#     type: float
+#     restore_value: no
+#     initial_value: '0'  
+
+
+#   - id: white_light_value
+#     type: float
+#     restore_value: yes
+#     initial_value: '0.0'
+
+
+#   - id: sunlike_light_value
+#     type: float
+#     restore_value: yes
+#     initial_value: '0.0'
+
+
+#   - id: red_light_value
+#     type: float
+#     restore_value: yes
+#     initial_value: '0.0'
+
+
+#   - id: far_red_light_value
+#     type: float
+#     restore_value: yes
+#     initial_value: '0.0'
+
+
+#   - id: blue_light_value
+#     type: float
+#     restore_value: yes
+#     initial_value: '0.0'
+
+
+  # - id: array_ppfd_1
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 400.0, 800.0, 1200.0, 1600.0, 2000.0}'
+
+  # - id: array_percentages_1
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 1.0, 31.0, 61.0, 90.0, 100.0}'
+
+  # - id: array_ppfd_2
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 50.0, 100.0, 150.0, 200.0, 250.0}'
+
+  # - id: array_percentages_2
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 10.0, 31.0, 61.0, 90.0, 100.0}'
+
+  # - id: array_ppfd_3
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 50.0, 100.0, 150.0, 200.0, 250.0}'
+
+  # - id: array_percentages_3
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 10.0, 31.0, 61.0, 90.0, 100.0}'
+
+  # - id: array_ppfd_4
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 50.0, 100.0, 150.0, 200.0, 250.0}'
+
+  # - id: array_percentages_4
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 10.0, 31.0, 61.0, 90.0, 100.0}'
+
+  # - id: array_ppfd_5
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 50.0, 100.0, 150.0, 200.0, 250.0}'
+
+  # - id: array_percentages_5
+  #   type: float[6]
+  #   restore_value: yes
+  #   initial_value: '{0, 10.0, 31.0, 61.0, 90.0, 100.0}'
+
+modbus:
+  # flow_control_pin: 7
+  uart_id: mod_bus
+  id: modbuspin
+
+modbus_controller:
+  - id: modbus01
+    address: 0x01
+    modbus_id: modbuspin
+    update_interval: 4s
+    setup_priority: -10
+
+  - id: modbusD2
+    address: 0xD2
+    modbus_id: modbuspin
+    update_interval: 4s
+    setup_priority: -10
+
+  - id: modbusD6
+    address: 0xD6
+    modbus_id: modbuspin
+    update_interval: 4s
+    setup_priority: -10
+
+  - id: modbusC1
+    address: 0xC1
+    modbus_id: modbuspin
+    update_interval: 4s
+
+  - id: modbusFF
+    address: 0xFF
+    modbus_id: modbuspin
+    update_interval: 4s
+
+sensor:
+  - platform: debug
+    free:
+      name: "Heap Free"
+
+  - platform: modbus_controller
+    modbus_controller_id: modbus01
+    id: default_sensor
+    name: "default_sensor"
+    force_update: True   
+    custom_command: [ 0x01, 0x03, 0x00, 0x00, 0x00, 0x01]
+    value_type: U_WORD
+    accuracy_decimals: 1
+
+  - platform: modbus_controller
+    modbus_controller_id: modbusFF
+    id: ff_sensor
+    name: "ff_sensor"
+    force_update: True   
+    custom_command: [ 0xFF, 0x03, 0x00, 0x00, 0x00, 0x01]
+    value_type: U_WORD
+    accuracy_decimals: 1
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbusD6
+  #   id: midi_hum_D6_220v
+  #   name: "midiHumD6220v"
+  #   force_update: True   
+  #   custom_command: [ 0xD6, 0x03, 0x00, 0x00, 0x00, 0x01]
+  #   unit_of_measurement: "%"
+  #   value_type: U_WORD
+  #   accuracy_decimals: 1
+  #   # on_value: 
+  #   #   then:
+  #   #     - if: 
+  #   #         condition:
+  #   #           - not:  
+  #   #             - api.connected: 
+  #   #         then: 
+  #   #           - lambda: |-
+  #   #               id(result_hum).publish_state(id(midi_hum_D6_220v_room2).state);
+  #   filters:
+  #     - clamp:
+  #         min_value: 100
+  #         max_value: 950
+  #         ignore_out_of_range: true
+  #     - median:
+  #         window_size: 15
+  #         send_every: 7
+  #     - lambda: |-
+  #         return x / 10;
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbusD6
+  #   id: midi_temp_D6_220v
+  #   name: "midiTempD6220v"
+  #   force_update: True
+  #   custom_command: [ 0xD6, 0x03, 0x00, 0x01, 0x00, 0x01]
+  #   unit_of_measurement: "°С"
+  #   value_type: S_WORD
+  #   accuracy_decimals: 1
+  #   # on_value: 
+  #   #   then:
+  #   #     - if: 
+  #   #         condition:
+  #   #           - not:  
+  #   #             - api.connected: 
+  #   #         then: 
+  #   #           - lambda: |-
+  #   #               id(result_temp).publish_state(id(midi_temp_D6_220v_room2).state);
+  #   filters:
+  #     - clamp:
+  #         min_value: 100
+  #         max_value: 950
+  #         ignore_out_of_range: true
+  #     - median:
+  #         window_size: 15
+  #         send_every: 7
+  #     - lambda: |-
+  #         return x / 10;
+
+
+  - platform: modbus_controller
+    modbus_controller_id: modbusD2
+    id: midi_hum_D2_220v
+    name: "midiHumD2220v"
+    force_update: True   
+    custom_command: [ 0xD2, 0x03, 0x00, 0x00, 0x00, 0x01]
+    unit_of_measurement: "%"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    on_value: 
+      then:
+      - lambda: |-
+          id(result_hum).publish_state(id(midi_hum_D2_220v).state);
+    filters:
+      - clamp:
+          min_value: 100
+          max_value: 950
+          ignore_out_of_range: true
+      - median:
+          window_size: 15
+          send_every: 7
+      - lambda: |-
+          return x / 10;
+
+  - platform: modbus_controller
+    modbus_controller_id: modbusD2
+    id: midi_temp_D2_220v
+    name: "midiTempD2220v"
+    force_update: True   
+    custom_command: [ 0xD2, 0x03, 0x00, 0x01, 0x00, 0x01]
+    unit_of_measurement: "°С"
+    value_type: S_WORD
+    accuracy_decimals: 1
+    # on_value: 
+    #   then:
+    #   - lambda: |-
+    #       id(result_temp).publish_state(id(midi_temp_D2_220v).state);
+    filters:
+      - clamp:
+          min_value: 100
+          max_value: 950
+          ignore_out_of_range: true
+      - median:
+          window_size: 15
+          send_every: 7
+      - lambda: |-
+          return x / 10;
+
+  - platform: modbus_controller
+    modbus_controller_id: modbusC1
+    id: midi_co2_C1_220v
+    name: "midiCO2C1220v"
+    force_update: True   
+    custom_command: [ 0xC1, 0x03, 0x00, 0x00, 0x00, 0x01]
+    unit_of_measurement: "ppm"
+    value_type: U_WORD
+    accuracy_decimals: 1
+    on_value: 
+      then: 
+        - lambda: |-
+            id(result_CO2).publish_state(id(midi_co2_C1_220v).state);
+    filters: 
+      - clamp:
+          min_value: 350
+          max_value: 4950
+          ignore_out_of_range: true
+      - median:
+          window_size: 15
+          send_every: 7
+
+# # General controller
+
+#   - platform: homeassistant
+#     id: hourDay
+#     entity_id: input_number.hours_day_midi
+#     accuracy_decimals: 1
+#     on_value:
+#       then:
+#         - lambda: |-
+#             for(int i=0; i<=23; i++){
+#             id(array_time)[i]=0;  
+#             }        
+#             id(counter)=0;
+#             id(hourDayVar)=id(hourDay).state;
+#             while(id(counter)<=id(hourWorkVar)-1){
+#             id(hourCurVar)=id(counter)+id(hourDayVar);
+#             id(array_time)[abs(id(hourCurVar)%24)]=1;
+#             id(counter)++;
+#             }
+
+
+#   - platform: homeassistant
+#     id: hourWork
+#     entity_id: input_number.hours_work_midi
+#     accuracy_decimals: 1
+#     on_value:
+#       then:
+#         - lambda: 'id(hourWorkVar) = id(hourWork).state;'
+#         - lambda: 'id(hourDay).publish_state(id(hourDay).state);'
+
+# # Hum controller
+
+#   - platform: homeassistant
+#     id: humDay
+#     entity_id: input_number.hum_set_day_midi
+#     accuracy_decimals: 1
+
+#   - platform: homeassistant
+#     id: humNight
+#     entity_id: input_number.hum_set_night_midi
+#     accuracy_decimals: 1
+
+#   - platform: homeassistant
+#     id: humGradient
+#     entity_id: input_number.hum_set_gradient_midi
+#     accuracy_decimals: 1
+
+  # - platform: template
+  #   id: result_hum
+  #   force_update: True
+  #   accuracy_decimals: 1
+  #   on_value: 
+  #     then:
+  #       - lambda: |-
+  #             if(id(array_time)[id(homeassistant_time).now().hour] == 1){
+  #             if(id(humDay).state - id(humGradient).state > id(result_hum).state){
+  #                 id(air_inflow_off).press();
+  #                 id(air_outflow_off).press();
+  #             }
+  #             else if(id(humDay).state + id(humGradient).state < id(result_hum).state){
+  #                 switch(int(id(set_air_inflow).state)){
+  #                   case 0: id(air_inflow_off).press(); break;
+  #                   case 1: id(air_inflow_low).press(); break;
+  #                   case 2: id(air_inflow_high).press(); break;
+  #                   default: break;
+  #                 }
+  #                 switch(int(id(set_air_outflow).state)){
+  #                   case 0: id(air_outflow_off).press(); break;
+  #                   case 1: id(air_outflow_low).press(); break;
+  #                   case 2: id(air_outflow_high).press(); break;
+  #                   default: break;
+  #                 }
+  #               }
+  #             }
+  #             else if(id(array_time)[id(homeassistant_time).now().hour] == 0){
+  #               if(id(humNight).state - id(humGradient).state > id(result_hum).state){   
+  #                 id(air_inflow_off).press();
+  #                 id(air_outflow_off).press();
+  #             }
+  #             else if(id(humNight).state + id(humGradient).state < id(result_hum).state){   
+
+  #                 switch(int(id(set_air_inflow).state)){
+  #                   case 0: id(air_inflow_off).press(); break;
+  #                   case 1: id(air_inflow_low).press(); break;
+  #                   case 2: id(air_inflow_high).press(); break;
+  #                   default: break;
+  #                 }
+  #                 switch(int(id(set_air_outflow).state)){
+  #                   case 0: id(air_outflow_off).press(); break;
+  #                   case 1: id(air_outflow_low).press(); break;
+  #                   case 2: id(air_outflow_high).press(); break;
+  #                   default: break;
+  #                 }
+  #               }
+  #             }
+
+
+  - platform: template
+    id: result_hum
+    force_update: True
+    accuracy_decimals: 1
+    on_value: 
+      then:
+        - lambda: |-
+              if (id(current_step_humidity) > id(result_hum).state){
+                  id(air_inflow_off).press();
+                  id(air_outflow_off).press();
+              }
+              else if (id(current_step_humidity) < id(result_hum).state){
+                  id(air_inflow_low).press();
+                  id(air_outflow_low).press();
+              }
+
+# # CO2 Controller
+
+#   - platform: homeassistant
+#     id: co2_set_day
+#     entity_id: input_number.co2_set_day_midi
+#     accuracy_decimals: 1
+
+#   - platform: homeassistant
+#     id: co2_set_gradient
+#     entity_id: input_number.co2_set_gradient_midi
+#     accuracy_decimals: 1
+
+#   - platform: homeassistant
+#     id: co2_set_night
+#     entity_id: input_number.co2_set_night_midi
+#     accuracy_decimals: 1
+
+  # - platform: template
+  #   id: result_CO2
+  #   force_update: True
+  #   accuracy_decimals: 1
+  #   on_value: 
+  #     then:
+  #       - lambda: |-
+  #             if(id(array_time)[id(homeassistant_time).now().hour] == 1){
+  #               if(id(co2_set_day).state - id(co2_set_gradient).state > id(result_CO2).state){
+  #                 id(co2_valve).turn_on();
+  #               }
+  #               else if(id(co2_set_day).state + id(co2_set_gradient).state < id(result_CO2).state){
+  #                 id(co2_valve).turn_off();
+  #               }
+  #             }
+  #             else if(id(array_time)[id(homeassistant_time).now().hour] == 0){
+  #               if(id(co2_set_night).state - id(co2_set_gradient).state > id(result_CO2).state){
+  #                 id(co2_valve).turn_on();
+  #               }
+  #               else if(id(co2_set_night).state + id(co2_set_gradient).state < id(result_CO2).state){
+  #                 id(co2_valve).turn_off();
+  #               }
+  #             }
+
+  - platform: template
+    id: result_CO2
+    force_update: True
+    accuracy_decimals: 1
+    on_value: 
+      then:
+        - lambda: |-
+                if (id(current_step_co2_level) > id(result_CO2).state){
+                  id(co2_valve).turn_on();
+                }
+                else if (id(current_step_co2_level) < id(result_CO2).state){
+                  id(co2_valve).turn_off();
+                }
+
+
+
+# # Temperature script
+
+#   - platform: homeassistant
+#     id: temp_day
+#     entity_id: input_number.temp_set_day_midi
+#     accuracy_decimals: 2
+#     on_value:
+#       then:
+#         - lambda: 'id(temp_intermediate) = id(temp_day).state - id(temp_night).state;'
+
+#   - platform: homeassistant
+#     id: temp_night
+#     entity_id: input_number.temp_set_night_midi
+#     accuracy_decimals: 2
+#     on_value:
+#       then:
+#         - lambda: 'id(temp_intermediate) = id(temp_day).state - id(temp_night).state;'
+
+  # - platform: template
+  #   id: result_temp
+  #   force_update: True
+  #   accuracy_decimals: 1
+
+#   - platform: template
+#     id: temp_send_intermediate_midi
+#     name: 'temperature send intermediate midi room1'
+#     accuracy_decimals: 2
+#     on_value: 
+#       then:
+#         - script.execute: 
+#             id: set_temperature_script_midi_1
+#             temperature_to_set: !lambda return x;
+
+# Ventilation script
+
+  # - platform: homeassistant
+  #   id: set_air_inflow
+  #   entity_id: input_number.set_air_inflow_midi
+  #   accuracy_decimals: 1
+
+
+  # - platform: homeassistant
+  #   id: set_air_outflow
+  #   entity_id: input_number.set_air_outflow_midi
+  #   accuracy_decimals: 1
+
+
+# time:
+#   - platform: homeassistant
+#     id: homeassistant_time
+#     on_time: 
+#       cron: "00 00 /1 * * *"
+#       then: 
+#       - script.execute: watering_script1
+
+# interval:
+#   - interval: 10s
+#     then:
+#         - lambda: |-
+#             if(id(array_time)[id(homeassistant_time).now().hour] == 1){
+#               id(temp_send_intermediate_midi).publish_state(id(temp_day).state);
+#             }
+#             else if(id(array_time)[id(homeassistant_time).now().hour] == 0){
+#               id(temp_send_intermediate_midi).publish_state(id(temp_night).state);
+#             }
+
+  # - interval: 1s
+  #   then:
+  #     - lambda: |-
+  #           id(white_light).set_level(pow(id(set_percentages_1) / 100.0, 0.26));
+  #           id(red_light).set_level(pow(id(set_percentages_2) / 100.0, 0.26));
+  #           id(far_red_light).set_level(pow(id(set_percentages_3) / 100.0, 0.26));
+  #           id(blue_light).set_level(pow(id(set_percentages_4) / 100.0, 0.26));
+  #           id(sunlike_light).set_level(pow(id(set_percentages_5) / 100.0, 0.26));
+
+
+switch:
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbus01
+  #   register_type: custom 
+  #   address: 0x07D0
+  #   id: enable_load_D2
+  #   name: "change address temp D2"
+  #   write_lambda: |-
+  #     ESP_LOGD("main","Modbus Switch incoming state = %d",x);
+  #     // return false ; // use this to just change the value
+  #     payload.push_back(0x01);  // device address
+  #     payload.push_back(0x06);  // force single coil
+  #     payload.push_back(0x07); // high byte address of the coil
+  #     payload.push_back(0xD0);  // low byte address of the coil
+  #     payload.push_back(0x00); // ON = 0xFF00 OFF=0000
+  #     payload.push_back(0xD2);
+  #     return true;
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbus01
+  #   register_type: custom 
+  #   address: 0x07D0
+  #   id: enable_load_D6
+  #   name: "change address temp D6"
+  #   write_lambda: |-
+  #     ESP_LOGD("main","Modbus Switch incoming state = %d",x);
+  #     // return false ; // use this to just change the value
+  #     payload.push_back(0x01);  // device address
+  #     payload.push_back(0x06);  // force single coil
+  #     payload.push_back(0x07); // high byte address of the coil
+  #     payload.push_back(0xD0);  // low byte address of the coil
+  #     payload.push_back(0x00); // ON = 0xFF00 OFF=0000
+  #     payload.push_back(0xD6);
+  #     return true;
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbus01
+  #   register_type: custom 
+  #   address: 0x07D0
+  #   id: enable_load_C1
+  #   name: "change address CO2 C1"
+  #   write_lambda: |-
+  #     ESP_LOGD("main","Modbus Switch incoming state = %d",x);
+  #     // return false ; // use this to just change the value
+  #     payload.push_back(0x01);  // device address
+  #     payload.push_back(0x06);  // force single coil
+  #     payload.push_back(0x07); // high byte address of the coil
+  #     payload.push_back(0xD0);  // low byte address of the coil
+  #     payload.push_back(0x00); // ON = 0xFF00 OFF=0000
+  #     payload.push_back(0xC1);
+  #     return true;
+
+  # - platform: modbus_controller
+  #   modbus_controller_id: modbus01
+  #   register_type: custom 
+  #   address: 0x0067
+  #   id: change_baudrate
+  #   name: "change baudrate CO2"
+  #   write_lambda: |-
+  #     ESP_LOGD("main","Modbus Switch incoming state = %d",x);
+  #     // return false ; // use this to just change the value
+  #     payload.push_back(0xC1);  // device address
+  #     payload.push_back(0x06);  // force single coil
+  #     payload.push_back(0x00); // high byte address of the coil
+  #     payload.push_back(0x67);  // low byte address of the coil
+  #     payload.push_back(0x00); // ON = 0xFF00 OFF=0000
+  #     payload.push_back(0x02);
+  #     return true;
+
+# Controller
+
+  - platform: gpio
+    name: "relay_0"
+    id: relay_0
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 0
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "relay_1"
+    id: relay_1
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 1
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "relay_2"
+    id: relay_2
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 2
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "relay_3"
+    id: relay_3
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_1
+      number: 3
+      mode: OUTPUT
+      inverted: true
+
+
+# Extender
+
+  - platform: gpio
+    name: "conditioner"
+    restore_mode: ALWAYS_ON
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 0
+      mode: OUTPUT
+
+  # - platform: gpio
+  #   name: "uv_lamp"
+  #   restore_mode: ALWAYS_ON
+  #   pin:
+  #     pcf8574: pcf8574_hub_out_relay
+  #     number: 1
+  #     mode: OUTPUT
+  #     inverted: true
+
+  - platform: gpio
+    id: co2_valve
+    name: "co2_valve"
+    restore_mode: ALWAYS_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 2
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    name: "main_light"
+    restore_mode: ALWAYS_ON
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 3
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    id: pin5_vent
+    name: "pin5_vent"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 4
+      mode: OUTPUT
+      inverted: true
+     
+  - platform: gpio
+    id: pin6_vent
+    name: "pin6_vent"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 5
+      mode: OUTPUT
+      inverted: true
+
+  - platform: gpio
+    id: pin7_vent
+    name: "pin7_vent"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 6
+      mode: OUTPUT
+      inverted: true
+     
+  - platform: gpio
+    id: pin8_vent
+    name: "pin8_vent"
+    restore_mode: RESTORE_DEFAULT_OFF
+    pin:
+      pcf8574: pcf8574_hub_out_relay
+      number: 7
+      mode: OUTPUT
+      inverted: true
+
+
+pca9685:
+    id: 'pca9685_hub'
+    frequency: 500
+
+
+
+output:
+  - platform: pca9685
+    pca9685_id: 'pca9685_hub'
+    id: "white_light_1"
+    channel: 0
+
+  - platform: pca9685
+    pca9685_id: 'pca9685_hub'
+    id: "red_light_1"
+    channel: 1
+
+  - platform: pca9685
+    pca9685_id: 'pca9685_hub'
+    id: "far_red_light_1"
+    channel: 2
+
+  - platform: pca9685
+    pca9685_id: 'pca9685_hub'
+    id: "blue_light_1"
+    channel: 3
+
+  - platform: pca9685
+    pca9685_id: 'pca9685_hub'
+    id: "sunlike_light_1"
+    channel: 4
+
+#   - platform: template
+#     type: float
+#     id: white_light_template
+#     write_action: 
+#       then:
+#         - lambda: |-
+#             id(white_light).set_level(pow(state, 0.26));
+
+#   - platform: template
+#     type: float
+#     id: red_light_template
+#     write_action: 
+#       then:
+#         - lambda: |-
+#             id(red_light).set_level(pow(state, 0.26));
+
+#   - platform: template
+#     type: float
+#     id: far_red_light_template
+#     write_action: 
+#       then:
+#         - lambda: |-
+#             id(far_red_light).set_level(pow(state, 0.26));
+
+#   - platform: template
+#     type: float
+#     id: blue_light_template
+#     write_action: 
+#       then:
+#         - lambda: |-
+#             id(blue_light).set_level(pow(state, 0.26));
+
+#   - platform: template
+#     type: float
+#     id: sunlike_light_template
+#     write_action: 
+#       then:
+#         - lambda: |-
+#             id(sunlike_light).set_level(pow(state, 0.26));        
+
+# light:
+#   - platform: monochromatic
+#     output: white_light_template
+#     name: "white_light"
+#   - platform: monochromatic
+#     output: red_light_template
+#     name: "red_light"
+#   - platform: monochromatic
+#     output: far_red_light_template
+#     name: "far_red_light"
+#   - platform: monochromatic
+#     output: blue_light_template
+#     name: "blue_light"
+#   - platform: monochromatic
+#     output: sunlike_light_template
+#     name: "sunlike_light"
+
+
+
+
+button:
+  - platform: template
+    id: air_outflow_high
+    name: "air_outflow_high"
+    on_press: 
+      then:
+        - switch.turn_off: pin6_vent
+        - switch.turn_off: pin5_vent
+
+  - platform: template
+    id: air_outflow_low
+    name: "air_outflow_low"
+    on_press: 
+      then:
+        - switch.turn_off: pin6_vent
+        - switch.turn_on: pin5_vent
+
+  - platform: template
+    id: air_outflow_off
+    name: "air_outflow_off"
+    on_press: 
+      then:
+        - switch.turn_on: pin6_vent
+        - switch.turn_on: pin5_vent
+
+
+  - platform: template
+    id: air_inflow_high
+    name: "air_inflow_high"
+    on_press: 
+      then:
+        - switch.turn_off: pin8_vent
+        - switch.turn_off: pin7_vent
+
+  - platform: template
+    id: air_inflow_low
+    name: "air_inflow_low"
+    on_press: 
+      then:
+        - switch.turn_off: pin8_vent
+        - switch.turn_on: pin7_vent
+
+  - platform: template
+    id: air_inflow_off
+    name: "air_inflow_off"
+    on_press: 
+      then:
+        - switch.turn_on: pin8_vent
+        - switch.turn_on: pin7_vent
+
+script:
+  # Script to send controller information
+  - id: send_controller_info
+    then:
+      - http_request.post:
+          url: "http://192.168.53.230:8000/chambers/6881f2dd82037cf38b8d27fa/apply_controller"
+          request_headers:
+            Content-Type: application/json
+          json: |-
+            root["controller_name"] = "test";
+            root["controller_ip"] = id(ip_address).state;
+            root["controller_type"] = "ESPHome";
+
+            root["settings"]["humidity"]["sectors"] = 1;
+            root["settings"]["co2"]["sectors"] = 1;
+
+            root["settings"]["light"]["sectors"] = 5;
+            JsonArray light_types = root["settings"]["light"].createNestedArray("types");
+            light_types.add("white_light_1");
+            light_types.add("red_light_1");
+            light_types.add("far-red_light_1");
+            light_types.add("blue_light_1");
+            light_types.add("sunlike_light_1");
+
+            root["settings"]["watering"]["sectors"] = 1;
+
+  # Helper script to control relay by index
+  # - id: control_relay_by_index
+  #   mode: queued
+  #   parameters:
+  #     relay_index: int
+  #     turn_on: bool
+  #   then:
+  #     - lambda: |-
+  #         ESP_LOGI("main", "Controlling relay %d, turn_on: %s", relay_index, turn_on ? "true" : "false");
+  #         switch(relay_index) {
+  #           case 0:
+  #             if (turn_on) id(relay_0).turn_on(); else id(relay_0).turn_off();
+  #             break;
+  #           case 1:
+  #             if (turn_on) id(relay_1).turn_on(); else id(relay_1).turn_off();
+  #             break;
+  #           case 2:
+  #             if (turn_on) id(relay_2).turn_on(); else id(relay_2).turn_off();
+  #             break;
+  #           case 3:
+  #             if (turn_on) id(relay_3).turn_on(); else id(relay_3).turn_off();
+  #             break;
+  #           default:
+  #             ESP_LOGE("main", "Invalid relay index: %d", relay_index);
+  #         }
+
+  # Helper script to control output by index
+  - id: control_analog_output_by_id
+    mode: queued
+    parameters:
+      output_id: string
+      level: float
+    then:
+      - lambda: |-
+          ESP_LOGI("main", "Controlling output %s, level: %.2f", output_id.c_str(), level);
+          if (output_id == "white_light_1") {
+            id(white_light_1).set_level(level);
+          } else if (output_id == "red_light_1") {
+            id(red_light_1).set_level(level);
+          } else if (output_id == "far-red_light_1") {
+            id(far_red_light_1).set_level(level);
+          } else if (output_id == "blue_light_1") {
+            id(blue_light_1).set_level(level);
+          } else if (output_id == "sunlike_light_1") {
+            id(sunlike_light_1).set_level(level);
+          } else {
+            ESP_LOGE("main", "Invalid output ID: %s", output_id.c_str());
+          }
+
+  # Script to parse and load current step
+  - id: parse_and_load_current_step
+    then:
+      - lambda: |-
+          if (id(scenarios_json).length() > 0 && id(schedule_scenarios_json).length() > 0) {
+            // Parse scenarios
+            DynamicJsonDocument scenarios_doc(20480);  // Reduced buffer size
+            DeserializationError error1 = deserializeJson(scenarios_doc, id(scenarios_json));
+            
+            // Parse schedule_scenarios
+            DynamicJsonDocument schedule_scenarios_doc(5120);  // Reduced buffer size
+            DeserializationError error2 = deserializeJson(schedule_scenarios_doc, id(schedule_scenarios_json));
+            
+            if (error1 || error2) {
+               ESP_LOGE("main", "JSON parsing failed: scenarios=%s, schedule_scenarios=%s", 
+               error1.c_str(), error2.c_str());
+               // Set defaults
+                                      id(current_step_index) = 0;
+                       id(current_step_temperature) = 20;
+                       id(current_step_humidity) = 50;
+                       id(current_step_co2_level) = 400;
+              for (int i = 0; i < 50; i++) {
+                id(current_step_light_sectors)[i] = 0;
+                id(current_step_watering_sectors)[i] = 0;
+              }
+              id(current_step_light_sectors_count) = 0;
+              id(current_step_watering_sectors_count) = 0;
+              return;
+            }
+            
+            JsonObject scenarios = scenarios_doc.as<JsonObject>();
+            JsonArray schedule_scenarios = schedule_scenarios_doc.as<JsonArray>();
+            
+            long current_timestamp = id(sntp_time).now().timestamp;
+            long schedule_start = id(time_start);
+            long elapsed_time = current_timestamp - schedule_start;
+            
+            // Find current scenario and step
+            long time_offset = 0;
+            int found_scenario = -1;
+            int found_step = -1;
+            int found_day = -1;
+            
+            for (int i = 0; i < schedule_scenarios.size(); i++) {
+              JsonArray scenario_info = schedule_scenarios[i];
+              if (scenario_info.size() >= 2) {
+                int scenario_index = scenario_info[0].as<int>();
+                int days_count = scenario_info[1].as<int>();
+                
+                String scenario_key = String(scenario_index);
+                
+                if (scenarios.containsKey(scenario_key)) {
+                  JsonArray scenario_steps = scenarios[scenario_key];
+                  
+                  // Check each day in this scenario
+                  for (int day = 0; day < days_count; day++) {
+                    long day_start = time_offset + (day * 86400);
+                    long day_end = day_start + 86400;
+                    
+                    if (elapsed_time >= day_start && elapsed_time < day_end) {
+                      // Found the day, now find the step
+                      long day_elapsed = elapsed_time - day_start;
+                      
+                      for (int step_idx = 0; step_idx < scenario_steps.size(); step_idx++) {
+                        JsonObject scenario_step = scenario_steps[step_idx];
+                        long step_start = scenario_step["relative_start_time"].as<long>();
+                        long step_end = (step_idx + 1 < scenario_steps.size()) ? 
+                                       scenario_steps[step_idx + 1]["relative_start_time"].as<long>() : 86400;
+                        
+                        if (day_elapsed >= step_start && day_elapsed < step_end) {
+                          found_scenario = i;
+                          found_step = step_idx;
+                          found_day = day;
+                          break;
+                        }
+                      }
+                      if (found_scenario != -1) break;
+                    }
+                  }
+                  
+                  if (found_scenario != -1) break;
+                  time_offset += days_count * 86400;
+                }
+              }
+            }
+            
+            // Load the found step or use first step as default
+            if (found_scenario != -1 && found_step != -1) {
+              JsonArray scenario_info = schedule_scenarios[found_scenario];
+              int scenario_index = scenario_info[0].as<int>();
+              String scenario_key = String(scenario_index);
+              JsonArray scenario_steps = scenarios[scenario_key];
+              JsonObject step = scenario_steps[found_step];
+              
+              // Store step information
+              id(current_step_index) = found_step;
+              id(current_step_time_start) = schedule_start + time_offset + (found_day * 86400) + step["relative_start_time"].as<long>();
+              
+              long step_end_relative = (found_step + 1 < scenario_steps.size()) ? 
+              scenario_steps[found_step + 1]["relative_start_time"].as<long>() : 86400;
+                             id(current_step_time_end) = schedule_start + time_offset + (found_day * 86400) + step_end_relative;
+              
+               id(current_step_temperature) = step["temperature"].as<int>();
+               id(current_step_humidity) = step["humidity"].as<int>();
+               id(current_step_co2_level) = step["co2"].as<int>();
+              
+              ESP_LOGI("main", "Found step: scenario=%d, day=%d, step=%d", found_scenario, found_day, found_step);
+                             ESP_LOGI("main", "Step temperature: %d", id(current_step_temperature));
+               ESP_LOGI("main", "Step humidity: %d", id(current_step_humidity));
+               ESP_LOGI("main", "Step co2: %d", id(current_step_co2_level));
+              
+              // Parse light_sectors array
+              if (step.containsKey("light_sectors") && step["light_sectors"].is<JsonArray>()) {
+                JsonArray light_sectors = step["light_sectors"];
+                id(current_step_light_sectors_count) = light_sectors.size();
+                
+                // Reset array
+                for (int i = 0; i < 50; i++) {
+                  id(current_step_light_sectors)[i] = 0;
+                }
+                
+                // Fill array with values
+                for (int i = 0; i < light_sectors.size() && i < 50; i++) {
+                  id(current_step_light_sectors)[i] = light_sectors[i].as<float>();
+                }
+                
+                ESP_LOGI("main", "Step light_sectors count: %d", id(current_step_light_sectors_count));
+              }
+              
+              // Parse watering_sectors array
+              if (step.containsKey("watering_sectors") && step["watering_sectors"].is<JsonArray>()) {
+                JsonArray watering_sectors = step["watering_sectors"];
+                id(current_step_watering_sectors_count) = watering_sectors.size();
+                
+                // Reset array
+                for (int i = 0; i < 50; i++) {
+                  id(current_step_watering_sectors)[i] = 0;
+                }
+                
+                // Fill array with values
+                for (int i = 0; i < watering_sectors.size() && i < 50; i++) {
+                  id(current_step_watering_sectors)[i] = watering_sectors[i].as<float>();
+                }
+                
+                ESP_LOGI("main", "Step watering_sectors count: %d", id(current_step_watering_sectors_count));
+              }
+            } else {
+               // No current step found, use defaults
+               ESP_LOGI("main", "No current step found, using defaults");
+               id(current_step_index) = 0;
+               id(current_step_temperature) = 20;
+               id(current_step_humidity) = 50;
+               id(current_step_co2_level) = 400;
+              for (int i = 0; i < 50; i++) {
+                id(current_step_light_sectors)[i] = 0;
+                id(current_step_watering_sectors)[i] = 0;
+              }
+              id(current_step_light_sectors_count) = 0;
+              id(current_step_watering_sectors_count) = 0;
+            }
+            
+            // Free up memory
+            scenarios_doc.clear();
+            schedule_scenarios_doc.clear();
+          }
