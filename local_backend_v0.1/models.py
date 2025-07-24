@@ -133,6 +133,8 @@ class EnvironmentSectorsSum(BaseModel):
 
 class DefineController(BaseModel):
     controller_name: str = Field()
+    controller_ip: str = Field()
+    controller_type: Literal["ESPHome", "Midea"] = Field()
     settings: EnvironmentParameters = Field()
 
     def __eq__(self, other):
@@ -156,34 +158,45 @@ class Chamber(BaseModel):
 # Dashboard Models
 class SensorReading(BaseModel):
     sensor_id: str = Field()
-    sensor_type: Literal["temperature", "humidity", "co2", "light", "ph", "water_level"] = Field()
+    name: str = Field()
+    sensor_type: Literal["temperature", "humidity", "co2", "light", "ph"] = Field()
     value: float = Field()
     unit: str = Field()
-    sector_id: Optional[str] = Field(default=None)
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
     status: Literal["online", "offline", "error"] = Field(default="online")
 
 class SwitchState(BaseModel):
     switch_id: str = Field()
-    switch_type: Literal["light", "pump", "fan", "heater", "cooler", "valve"] = Field()
     name: str = Field()
     state: bool = Field(default=False)
-    sector_id: Optional[str] = Field(default=None)
-    auto_mode: bool = Field(default=True)
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
-class ESPHomeDevice(BaseModel):
+class Climate(BaseModel):
+    temperature_inside: float = Field()
+    temperature_outside: float = Field()
+    temperature_set: int = Field()
+    fan_mode: Literal["off", "auto", "low", "medium", "high"] = Field()
+    power_mode: Literal["off", "cool", "dry", "auto", "heat"] = Field()
+    swing_mode: Literal["off", "horizontal", "vertical"] = Field()
+
+class Device(BaseModel):
     device_id: str = Field()
     name: str = Field()
     ip_address: str = Field()
     status: Literal["online", "offline"] = Field(default="offline")
     last_seen: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
+
+class ESPHomeDevice(Device):
     sensors: List[SensorReading] = Field(default=[])
     switches: List[SwitchState] = Field(default=[])
 
+class MideaDevice(Device):
+    climate: Climate = Field(default=None)
+
 class DashboardState(BaseModel):
     chamber_id: str = Field()
-    devices: List[ESPHomeDevice] = Field(default=[])
+    esp_devices: List[ESPHomeDevice] = Field(default=[])
+    midea_devices: List[MideaDevice] = Field(default=[])
     last_update: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
     auto_mode: bool = Field(default=True)
 

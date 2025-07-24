@@ -4,6 +4,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 interface SensorReading {
   sensor_id: string
   sensor_type: 'temperature' | 'humidity' | 'co2' | 'light' | 'ph' | 'water_level'
+  name: string
   value: number
   unit: string
   sector_id?: string
@@ -21,6 +22,15 @@ interface SwitchState {
   timestamp: number
 }
 
+interface MideaDevice {
+  device_id: string
+  name: string
+  ip_address: string
+  status: 'online' | 'offline'
+  last_seen: number
+  climate: Climate
+}
+
 interface ESPHomeDevice {
   device_id: string
   name: string
@@ -31,9 +41,20 @@ interface ESPHomeDevice {
   switches: SwitchState[]
 }
 
+interface Climate {
+  temperature_inside: number
+  temperature_outside: number
+  humidity_inside: number
+  humidity_outside: number
+  co2_inside: number
+  co2_outside: number
+  light_inside: number
+}
+
 interface DashboardState {
   chamber_id: string
-  devices: ESPHomeDevice[]
+  esp_devices: ESPHomeDevice[]
+  midea_devices: MideaDevice[]
   last_update: number
   auto_mode: boolean
 }
@@ -54,26 +75,31 @@ export function useDashboard() {
   // Computed properties
   const allSensors = computed(() => {
     if (!dashboardState.value) return []
-    return dashboardState.value.devices.flatMap(device => 
+    return dashboardState.value.esp_devices.flatMap(device => 
       device.sensors.map(sensor => ({ ...sensor, device_name: device.name }))
     )
   })
 
   const allSwitches = computed(() => {
     if (!dashboardState.value) return []
-    return dashboardState.value.devices.flatMap(device => 
+    return dashboardState.value.esp_devices.flatMap(device => 
       device.switches.map(switch_ => ({ ...switch_, device_name: device.name }))
     )
   })
 
+  const allMideaDevices = computed(() => {
+    if (!dashboardState.value) return []
+    return dashboardState.value.midea_devices.map(device => ({ ...device, device_name: device.name }))
+  })
+
   const onlineDevices = computed(() => {
     if (!dashboardState.value) return []
-    return dashboardState.value.devices.filter(device => device.status === 'online')
+    return dashboardState.value.esp_devices.filter(device => device.status === 'online')
   })
 
   const offlineDevices = computed(() => {
     if (!dashboardState.value) return []
-    return dashboardState.value.devices.filter(device => device.status === 'offline')
+    return dashboardState.value.esp_devices.filter(device => device.status === 'offline')
   })
 
   const getSensorsByType = (type: string) => {
@@ -270,7 +296,7 @@ export function useDashboard() {
     allSwitches,  
     onlineDevices,
     offlineDevices,
-
+    allMideaDevices,
     // Methods
     initializeDashboard,
     disconnect,

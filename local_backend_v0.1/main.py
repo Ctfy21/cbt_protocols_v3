@@ -10,7 +10,9 @@ import os
 from dotenv import load_dotenv
 import json
 import asyncio
-import random
+import aiohttp
+import logging
+import re
 from models import (
     Schedule, Scenario, Chamber, SchedulePLC, PLCStep, LightSector, WateringSector, 
     Utils, ControlMode, DefineController, EnvironmentParameters, EnvironmentControlSettings, 
@@ -18,9 +20,22 @@ from models import (
     DashboardState, SwitchToggleRequest
 )
 from time import time
+from esphomeAPI import (
+    esphome_manager, initialize_esphome_devices, get_chamber_esphome_devices, 
+    toggle_esphome_switch
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # MongoDB connection
 mongodb_client: MongoClient = None
 database = None
+
+# Dashboard state and SSE connections
+dashboard_connections: Dict[str, List] = {}  # chamber_id -> list of connections
+dashboard_states: Dict[str, DashboardState] = {}  # chamber_id -> dashboard state
 
 async def create_default_chambers():
     """Create a default chamber if none exists"""
@@ -57,6 +72,24 @@ async def create_default_chambers():
     except Exception as e:
         print(f"❌ Error creating default chambers: {e}")
 
+async def initialize_all_esphome_devices():
+    """Initialize ESPHome devices for all chambers"""
+    try:
+        logger.info("Initializing ESPHome devices for all chambers")
+        chambers = list(database.chambers.find())
+        
+        all_controllers = []
+        for chamber in chambers:
+            controllers = chamber.get("controllers", [])
+            all_controllers.extend(controllers)
+        
+        # Initialize ESPHome connections
+        await initialize_esphome_devices(all_controllers)
+        logger.info("ESPHome devices initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"Error initializing ESPHome devices: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
@@ -68,9 +101,15 @@ async def lifespan(app: FastAPI):
     # Create default chamber if none exists
     await create_default_chambers()
     
+    # Initialize ESPHome devices
+    await initialize_all_esphome_devices()
+    
     yield
     
     # Shutdown
+    if esphome_manager:
+        await esphome_manager.disconnect_all()
+        
     if mongodb_client:
         mongodb_client.close()
         print("Disconnected from MongoDB")
@@ -91,9 +130,38 @@ def health():
     return {"status": "ok"}
 
 # Chamber endpoints
+@app.get("/chambers", response_model=List[Chamber])
+def get_chambers():
+    """Get all chambers"""
+    try:
+        chambers = list(database.chambers.find())
+        for chamber in chambers:
+            chamber["_id"] = str(chamber["_id"])
+        return chambers
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/chambers/{chamber_id}", response_model=Chamber)
+def get_chamber(chamber_id: str):
+    """Get specific chamber by ID"""
+    try:
+        if not ObjectId.is_valid(chamber_id):
+            raise HTTPException(status_code=400, detail="Invalid chamber ID")
+        
+        chamber = database.chambers.find_one({"_id": ObjectId(chamber_id)})
+        if not chamber:
+            raise HTTPException(status_code=404, detail="Chamber not found")
+        chamber["_id"] = str(chamber["_id"])
+        return chamber
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Legacy endpoint for backward compatibility
 @app.get("/chamber", response_model=Chamber)
-def get_chamber():
-    """Get chamber"""
+def get_first_chamber():
+    """Get first chamber (legacy endpoint)"""
     try:
         chamber = database.chambers.find_one()
         if not chamber:
@@ -108,7 +176,7 @@ def get_chamber():
 
 # Chamber endpoints
 @app.post("/chambers/{chamber_id}/apply_controller")
-def apply_controller(chamber_id: str, controller: DefineController):
+async def apply_controller(chamber_id: str, controller: DefineController):
     """Apply controller"""
 
     chamber = database.chambers.find_one({"_id": ObjectId(chamber_id)})
@@ -163,126 +231,71 @@ def apply_controller(chamber_id: str, controller: DefineController):
     result = database.chambers.update_one({"_id": ObjectId(chamber_id)}, {"$set": {"is_active": True, "controllers": controllers_dict, "sum_sectors": new_sum_sectors.model_dump()}})
     if result.modified_count == 0:
         raise HTTPException(status_code=500, detail="Failed to apply controller")
+    
+    # Initialize ESPHome devices for new controllers
+    try:
+        await initialize_esphome_devices(controllers_dict)
+        logger.info(f"ESPHome devices initialized for chamber {chamber_id}")
+    except Exception as e:
+        logger.error(f"Error initializing ESPHome devices: {e}")
+    
     return Response(status_code=200, content="Controller applied successfully")
 
-# Dashboard state and SSE connections
-dashboard_connections: Dict[str, List] = {}  # chamber_id -> list of connections
-dashboard_states: Dict[str, DashboardState] = {}  # chamber_id -> dashboard state
+async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
+    """Get dashboard data for a chamber from its ESPHome controllers"""
+    try:
+        # Get chamber data
+        chamber = database.chambers.find_one({"_id": ObjectId(chamber_id)})
+        if not chamber:
+            raise HTTPException(status_code=404, detail="Chamber not found")
+        
+        # Get controllers from chamber
+        controllers = chamber.get("controllers", [])
+        if not controllers:
+            logger.warning(f"No controllers found for chamber {chamber_id}")
+            return DashboardState(chamber_id=chamber_id, esp_devices=[], midea_devices=[])
+        
+        # Get ESPHome devices for this chamber
+        esp_devices = await get_chamber_esphome_devices(controllers)
+        # midea_devices = await get_chamber_midea_devices(controllers)
 
-# Mock sensor data generation
-async def generate_mock_sensor_data(chamber_id: str) -> DashboardState:
-    """Generate mock sensor data for demonstration purposes"""
-    
-    # Create mock devices if not exists
-    if chamber_id not in dashboard_states:
-        devices = []
+        return DashboardState(
+            chamber_id=chamber_id,
+            esp_devices=esp_devices,
+            midea_devices=[],
+            last_update=int(time()),
+            auto_mode=True
+        )
         
-        # Device 1: Environmental sensors
-        env_sensors = [
-            SensorReading(sensor_id="temp_1", sensor_type="temperature", value=round(22.5 + random.uniform(-2, 2), 1), unit="°C", sector_id="1"),
-            SensorReading(sensor_id="hum_1", sensor_type="humidity", value=round(65 + random.uniform(-5, 5), 1), unit="%", sector_id="1"),
-            SensorReading(sensor_id="co2_1", sensor_type="co2", value=round(400 + random.uniform(-50, 100), 0), unit="ppm", sector_id="1"),
-        ]
-        
-        env_switches = [
-            SwitchState(switch_id="fan_1", switch_type="fan", name="Вентилятор 1", state=random.choice([True, False]), sector_id="1"),
-            SwitchState(switch_id="heater_1", switch_type="heater", name="Нагреватель 1", state=random.choice([True, False]), sector_id="1"),
-        ]
-        
-        devices.append(ESPHomeDevice(
-            device_id="env_controller_1", 
-            name="Контроллер среды 1",
-            ip_address="192.168.1.100",
-            status="online",
-            sensors=env_sensors,
-            switches=env_switches
-        ))
-        
-        # Device 2: Light controller
-        light_sensors = [
-            SensorReading(sensor_id="light_1", sensor_type="light", value=round(250 + random.uniform(-50, 100), 0), unit="µmol/m²/s", sector_id="A"),
-            SensorReading(sensor_id="light_2", sensor_type="light", value=round(280 + random.uniform(-50, 100), 0), unit="µmol/m²/s", sector_id="B"),
-        ]
-        
-        light_switches = [
-            SwitchState(switch_id="light_a", switch_type="light", name="LED сектор A", state=random.choice([True, False]), sector_id="A"),
-            SwitchState(switch_id="light_b", switch_type="light", name="LED сектор B", state=random.choice([True, False]), sector_id="B"),
-        ]
-        
-        devices.append(ESPHomeDevice(
-            device_id="light_controller_1",
-            name="Контроллер освещения 1", 
-            ip_address="192.168.1.101",
-            status="online",
-            sensors=light_sensors,
-            switches=light_switches
-        ))
-        
-        # Device 3: Water system
-        water_sensors = [
-            SensorReading(sensor_id="ph_1", sensor_type="ph", value=round(6.5 + random.uniform(-0.5, 0.5), 2), unit="pH", sector_id="1"),
-            SensorReading(sensor_id="water_level_1", sensor_type="water_level", value=round(75 + random.uniform(-10, 10), 1), unit="%", sector_id="1"),
-        ]
-        
-        water_switches = [
-            SwitchState(switch_id="pump_1", switch_type="pump", name="Насос подачи", state=random.choice([True, False]), sector_id="1"),
-            SwitchState(switch_id="valve_1", switch_type="valve", name="Клапан 1", state=random.choice([True, False]), sector_id="1"),
-        ]
-        
-        devices.append(ESPHomeDevice(
-            device_id="water_controller_1",
-            name="Контроллер поливки 1",
-            ip_address="192.168.1.102", 
-            status="online",
-            sensors=water_sensors,
-            switches=water_switches
-        ))
-        
-        dashboard_states[chamber_id] = DashboardState(chamber_id=chamber_id, devices=devices)
-    
-    # Update sensor values with some variation
-    for device in dashboard_states[chamber_id].devices:
-        for sensor in device.sensors:
-            if sensor.sensor_type == "temperature":
-                sensor.value = round(sensor.value + random.uniform(-0.2, 0.2), 1)
-                sensor.value = max(18, min(30, sensor.value))  # Keep in realistic range
-            elif sensor.sensor_type == "humidity":
-                sensor.value = round(sensor.value + random.uniform(-1, 1), 1)
-                sensor.value = max(30, min(90, sensor.value))
-            elif sensor.sensor_type == "co2":
-                sensor.value = round(sensor.value + random.uniform(-10, 10), 0)
-                sensor.value = max(300, min(800, sensor.value))
-            elif sensor.sensor_type == "light":
-                sensor.value = round(sensor.value + random.uniform(-5, 5), 0)
-                sensor.value = max(0, min(500, sensor.value))
-            elif sensor.sensor_type == "ph":
-                sensor.value = round(sensor.value + random.uniform(-0.1, 0.1), 2)
-                sensor.value = max(5.5, min(7.5, sensor.value))
-            elif sensor.sensor_type == "water_level":
-                sensor.value = round(sensor.value + random.uniform(-1, 1), 1)
-                sensor.value = max(0, min(100, sensor.value))
-            
-            sensor.timestamp = int(time())
-    
-    dashboard_states[chamber_id].last_update = int(time())
-    return dashboard_states[chamber_id]
+    except Exception as e:
+        logger.error(f"Error getting dashboard data for chamber {chamber_id}: {e}")
+        return DashboardState(
+            chamber_id=chamber_id,
+            esp_devices=[],
+            midea_devices=[],
+            last_update=int(time()),
+            auto_mode=True
+        )
 
 async def dashboard_event_generator(chamber_id: str) -> AsyncGenerator[str, None]:
     """Generate SSE events for dashboard updates"""
     try:
         while True:
-            # Generate updated dashboard state
-            dashboard_state = await generate_mock_sensor_data(chamber_id)
+            # Get updated dashboard state from ESPHome controllers
+            dashboard_state = await get_chamber_dashboard_data(chamber_id)
+            
+            # Update cached state
+            dashboard_states[chamber_id] = dashboard_state
             
             # Format as SSE event
             data = json.dumps(dashboard_state.model_dump(), ensure_ascii=False)
             yield f"data: {data}\n\n"
             
             # Wait before next update
-            await asyncio.sleep(2)  # Update every 2 seconds
+            await asyncio.sleep(3)  # Update every 3 seconds
             
     except Exception as e:
-        print(f"Error in dashboard event generator: {e}")
+        logger.error(f"Error in dashboard event generator: {e}")
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
 
 # Dashboard endpoints
@@ -318,8 +331,8 @@ async def get_dashboard_state(chamber_id: str):
     if not chamber:
         raise HTTPException(status_code=404, detail="Chamber not found")
     
-    # Generate or get current state
-    dashboard_state = await generate_mock_sensor_data(chamber_id)
+    # Get current dashboard state
+    dashboard_state = await get_chamber_dashboard_data(chamber_id)
     return dashboard_state
 
 @app.post("/dashboard/{chamber_id}/switches/{switch_id}/toggle")
@@ -333,23 +346,107 @@ async def toggle_switch(chamber_id: str, switch_id: str, request: SwitchToggleRe
     if not chamber:
         raise HTTPException(status_code=404, detail="Chamber not found")
     
-    # Find and update switch
-    if chamber_id in dashboard_states:
-        for device in dashboard_states[chamber_id].devices:
-            for switch in device.switches:
-                if switch.switch_id == switch_id:
-                    switch.state = request.state
-                    if request.auto_mode is not None:
-                        switch.auto_mode = request.auto_mode
-                    switch.timestamp = int(time())
-                    
-                    # Here you would typically send command to ESPHome device
-                    # await send_esphome_command(device.ip_address, switch_id, request.state)
-                    
+    # Get current dashboard state to find device
+    dashboard_state = await get_chamber_dashboard_data(chamber_id)
+    
+    # Find the device and switch
+    for device in dashboard_state.esp_devices:
+        for switch in device.switches:
+            if switch.switch_id == switch_id:
+                # Extract switch key from switch_id (format: device_id_switch_key)
+                switch_key = switch_id.split('_')[-1]  # Get the last part as switch key
+                
+                # Use ESPHome API to toggle switch
+                success = await toggle_esphome_switch(device.device_id, switch_key, request.state)
+                
+                if success:
                     return {"success": True, "switch_id": switch_id, "state": request.state}
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to send command to ESPHome controller")
     
     raise HTTPException(status_code=404, detail="Switch not found")
 
+# ESPHome Management endpoints
+@app.post("/chambers/{chamber_id}/reinitialize_esphome")
+async def reinitialize_chamber_esphome(chamber_id: str):
+    """Reinitialize ESPHome devices for a specific chamber"""
+    if not ObjectId.is_valid(chamber_id):
+        raise HTTPException(status_code=400, detail="Invalid chamber ID")
+    
+    try:
+        chamber = database.chambers.find_one({"_id": ObjectId(chamber_id)})
+        if not chamber:
+            raise HTTPException(status_code=404, detail="Chamber not found")
+        
+        controllers = chamber.get("controllers", [])
+        await initialize_esphome_devices(controllers)
+        
+        return {"success": True, "message": "ESPHome devices reinitialized"}
+        
+    except Exception as e:
+        logger.error(f"Error reinitializing ESPHome devices: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/esphome/devices")
+async def get_all_esphome_devices():
+    """Get all ESPHome devices status"""
+    try:
+        devices = await esphome_manager.get_all_devices()
+        return {"devices": [device.model_dump() for device in devices]}
+    except Exception as e:
+        logger.error(f"Error getting ESPHome devices: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/esphome/devices/{device_name}/reconnect")
+async def reconnect_esphome_device(device_name: str):
+    """Force reconnect to a specific ESPHome device"""
+    try:
+        # Find device info from chambers first
+        chambers = list(database.chambers.find())
+        device_found = False
+        target_controller = None
+        
+        for chamber in chambers:
+            controllers = chamber.get("controllers", [])
+            for controller in controllers:
+                if (controller.get("controller_type") == "ESPHome" and 
+                    controller.get("controller_name") == device_name):
+                    target_controller = controller
+                    device_found = True
+                    break
+            
+            if device_found:
+                break
+        
+        if not target_controller:
+            raise HTTPException(status_code=404, detail="Device configuration not found")
+        
+        # Remove existing device first
+        # Find the actual device_id from the device info
+        device_to_remove = None
+        devices = await esphome_manager.get_all_devices()
+        for device in devices:
+            if device.name == device_name:
+                device_to_remove = device.device_id
+                break
+        
+        if device_to_remove:
+            success = await esphome_manager.remove_device(device_to_remove)
+            logger.info(f"Removed device {device_to_remove}: {success}")
+        
+        # Re-add device with correct parameters
+        ip_address = target_controller.get("controller_ip")
+        if ip_address and device_name:
+            await esphome_manager.add_device(ip_address, device_name)
+            return {"success": True, "message": f"Device {device_name} reconnection initiated"}
+        else:
+            raise HTTPException(status_code=400, detail="Missing IP address or device name")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error reconnecting ESPHome device {device_name}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Schedule endpoints
 @app.get("/schedules", response_model=List[Schedule])
