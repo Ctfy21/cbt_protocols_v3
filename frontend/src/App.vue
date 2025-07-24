@@ -46,6 +46,17 @@
             </div>
             
             <router-link
+              to="/dashboard"
+              class="sidebar-link"
+              :class="$route.name === 'Dashboard' ? 'sidebar-link-active' : 'sidebar-link-inactive'"
+            >
+              <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+              </svg>
+              Панель управления
+            </router-link>
+            
+            <router-link
               to="/scenarios"
               class="sidebar-link"
               :class="$route.name === 'Scenarios' ? 'sidebar-link-active' : 'sidebar-link-inactive'"
@@ -97,7 +108,7 @@
             <span class="text-xs text-gray-400">{{ currentTime }}</span>
           </div>
           <div v-if="selectedChamber" class="text-xs text-gray-400">
-            Камера: {{ selectedChamber.settings?.light_sectors || 0 }}L / {{ selectedChamber.settings?.watering_sectors || 0 }}W
+            Камера: {{ selectedChamber.sum_sectors?.light?.sectors || 0 }}L / {{ selectedChamber.sum_sectors?.watering?.sectors || 0 }}W
           </div>
         </div>
       </div>
@@ -158,6 +169,7 @@ const { selectedChamber, hasSelectedChamber } = useChambers()
 const pageTitle = computed(() => {
   const titles: { [key: string]: string } = {
     'Chambers': 'Выбор камеры',
+    'Dashboard': 'Панель управления',
     'Scenarios': 'Библиотека сценариев',
     'Schedules': 'Планировщик экспериментов'
   }
@@ -167,6 +179,7 @@ const pageTitle = computed(() => {
 const pageDescription = computed(() => {
   const descriptions: { [key: string]: string } = {
     'Chambers': 'Выберите камеру для начала работы с системой управления',
+    'Dashboard': 'Мониторинг датчиков и управление системами в реальном времени',
     'Scenarios': '24-часовые циклы выращивания для научных экспериментов',
     'Schedules': 'Создание и управление расписаниями для научных исследований'
   }

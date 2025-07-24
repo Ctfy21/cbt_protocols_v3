@@ -1,15 +1,30 @@
 import { ref, computed } from 'vue'
 
-// Types
-interface ChamberSettings {
-  light_sectors: number
-  watering_sectors: number
+// Types - updated to match backend models
+interface EnvironmentControlSettings {
+  sectors: number
+  types?: string[]
+}
+
+interface EnvironmentParameters {
+  temperature?: EnvironmentControlSettings
+  humidity?: EnvironmentControlSettings
+  co2?: EnvironmentControlSettings
+  light?: EnvironmentControlSettings
+  watering?: EnvironmentControlSettings
+}
+
+interface DefineController {
+  controller_name: string
+  settings: EnvironmentParameters
 }
 
 interface Chamber {
   id: string
   name: string
-  settings?: ChamberSettings
+  is_active: boolean
+  controllers: DefineController[]
+  sum_sectors: EnvironmentParameters
   created_at: number
   updated_at: number
 }
@@ -35,6 +50,20 @@ export function useChambers() {
   
   // Check if chamber is selected
   const hasSelectedChamber = computed(() => selectedChamber.value !== null)
+
+  // Get sectors count from selected chamber
+  const lightSectorsCount = computed(() => selectedChamber.value?.sum_sectors?.light?.sectors || 0)
+  const wateringSectorsCount = computed(() => selectedChamber.value?.sum_sectors?.watering?.sectors || 0)
+  const temperatureSectorsCount = computed(() => selectedChamber.value?.sum_sectors?.temperature?.sectors || 0)
+  const humiditySectorsCount = computed(() => selectedChamber.value?.sum_sectors?.humidity?.sectors || 0)
+  const co2SectorsCount = computed(() => selectedChamber.value?.sum_sectors?.co2?.sectors || 0)
+
+  // Get types from selected chamber
+  const lightTypes = computed(() => selectedChamber.value?.sum_sectors?.light?.types || [])
+  const wateringTypes = computed(() => selectedChamber.value?.sum_sectors?.watering?.types || [])
+  const temperatureTypes = computed(() => selectedChamber.value?.sum_sectors?.temperature?.types || [])
+  const humidityTypes = computed(() => selectedChamber.value?.sum_sectors?.humidity?.types || [])
+  const co2Types = computed(() => selectedChamber.value?.sum_sectors?.co2?.types || [])
 
   // Helper functions for persistence
   const saveSelectedChamber = (chamber: Chamber | null) => {
@@ -85,11 +114,14 @@ export function useChambers() {
       // Transform single chamber to array and normalize id
       const chamber = data._id ? { ...data, id: data._id } : data
       
-      // Ensure chamber has settings with default values
-      if (!chamber.settings) {
-        chamber.settings = {
-          light_sectors: 1,
-          watering_sectors: 1
+      // Ensure chamber has sum_sectors with default values
+      if (!chamber.sum_sectors) {
+        chamber.sum_sectors = {
+          temperature: { sectors: 1 },
+          humidity: { sectors: 1 },
+          co2: { sectors: 1 },
+          light: { sectors: 1 },
+          watering: { sectors: 1 }
         }
       }
       
@@ -161,6 +193,20 @@ export function useChambers() {
     activeChambers,
     availableChambers,
     hasSelectedChamber,
+    
+    // Sectors counts
+    lightSectorsCount,
+    wateringSectorsCount,
+    temperatureSectorsCount,
+    humiditySectorsCount,
+    co2SectorsCount,
+    
+    // Types
+    lightTypes,
+    wateringTypes,
+    temperatureTypes,
+    humidityTypes,
+    co2Types,
     
     // Methods
     fetchChambers,

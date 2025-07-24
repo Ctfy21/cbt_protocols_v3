@@ -56,13 +56,18 @@
                   <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
                   </svg>
-                  {{ chamber.settings?.light_sectors || 0 }} секторов освещения
+                  <div class="text-center">
+                    <div>{{ chamber.sum_sectors?.light?.sectors || 0 }} секторов освещения</div>
+                    <div v-if="chamber.sum_sectors?.light?.types?.length" class="text-xs text-gray-500 mt-1">
+                      {{ chamber.sum_sectors.light.types.join(', ') }}
+                    </div>
+                  </div>
                 </div>
                 <div class="flex justify-center items-center">
                   <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
                   </svg>
-                  {{ chamber.settings?.watering_sectors || 0 }} секторов полива
+                  {{ chamber.sum_sectors?.watering?.sectors || 0 }} секторов полива
                 </div>
                 <div class="flex justify-center items-center">
                   <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">

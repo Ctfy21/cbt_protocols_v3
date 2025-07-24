@@ -560,6 +560,7 @@ interface Schedule {
   created_at: number
   updated_at: number
   scenarios: string[]
+  schedule_scenarios?: Array<[number, number]>  // [индекс_сценария, количество_дней]
 }
 
 interface Scenario {
@@ -653,18 +654,42 @@ const createSchedule = async () => {
     }
     
     // Convert date-scenario assignments to ordered scenario list
-    const sortedDates = Object.keys(dateScenarioAssignments.value).sort()
-    const scenarioIds = sortedDates.map(dateStr => dateScenarioAssignments.value[dateStr])
+    const dates = Object.keys(dateScenarioAssignments.value).sort()
+    const scenarioIds = dates.map(dateStr => dateScenarioAssignments.value[dateStr])
+    const unique_scenario_ids = [...new Set(scenarioIds)]
+    console.log('unique_scenario_ids:', unique_scenario_ids)
     
+    let schedule_scenarios = []
+    let counter = 1
+    let currentScenarioId = scenarioIds[0]
+    
+    for (let i = 1; i < scenarioIds.length; i++) {
+      if (scenarioIds[i] === currentScenarioId) {
+        counter++
+      } else {
+        // Добавляем [индекс_сценария, количество_дней]
+        schedule_scenarios.push([unique_scenario_ids.indexOf(currentScenarioId), counter])
+        currentScenarioId = scenarioIds[i]
+        counter = 1
+      }
+    }
+    
+    // Добавляем последний сценарий
+    schedule_scenarios.push([unique_scenario_ids.indexOf(currentScenarioId), counter])
+    
+    console.log('schedule_scenarios:', schedule_scenarios)
+
+
     // Calculate Schedule start and end times
-    const firstDate = new Date(sortedDates[0])
+    const firstDate = new Date(dates[0])
     const timeStart = Math.floor(firstDate.getTime() / 1000) + getTimezoneSecondsOffset()
     
     const scheduleData = {
       name: newSchedule.value.name,
       description: newSchedule.value.description,
-      time_start: timeStart,      
-      scenarios: scenarioIds,
+      time_start: timeStart,
+      scenarios: unique_scenario_ids,
+      schedule_scenarios: schedule_scenarios,
       chamber_id: selectedChamber.value?.id || undefined
     }
     console.log(scheduleData)
@@ -713,6 +738,20 @@ const getScheduleType = (schedule: Schedule) => {
 }
 
 const getScheduleDuration = (schedule: Schedule) => {
+  // Если есть schedule_scenarios, считаем общую продолжительность
+  if (schedule.schedule_scenarios && schedule.schedule_scenarios.length > 0) {
+    const totalDays = schedule.schedule_scenarios.reduce((sum, scenarioData) => {
+      return sum + (scenarioData[1] || 0)  // scenarioData[1] - количество дней
+    }, 0)
+    
+    if (totalDays === 1) {
+      return '1 день'
+    } else {
+      return `${totalDays} дней`
+    }
+  }
+  
+  // Fallback для старого формата - просто количество уникальных сценариев
   const days = schedule.scenarios.length
   if (days === 1) {
     return '1 день'
@@ -892,7 +931,7 @@ const handleDateClick = (date: Date) => {
     // Assign selected scenario to this date
     dateScenarioAssignments.value[dateStr] = selectedScenarioForCalendar.value
   }
-  
+  console.log(dateScenarioAssignments.value)
   // Update validation messages
   validationMessages.value = validateSchedule()
 }
