@@ -19,7 +19,7 @@ from models import (
     Schedule, Scenario, Chamber, SchedulePLC, PLCStep, LightSector, WateringSector, 
     Utils, ControlMode, DefineController, EnvironmentParameters, EnvironmentControlSettings, 
     EnvironmentSectorsSum, SectorIds, SensorReading, SwitchState, ESPHomeDevice, 
-    DashboardState, SwitchToggleRequest
+    DashboardState, SwitchToggleRequest, CurrentStep
 )
 from time import time
 from esphomeAPI import (
@@ -102,10 +102,74 @@ async def initialize_all_devices():
         logger.error(f"Error initializing devices: {e}")
         logger.error(traceback.format_exc())
 
+# Schedule status monitor
+schedule_monitor_task = None
+
+async def check_schedule_status():
+    """Check and update schedule statuses every minute"""
+    while True:
+        try:
+            current_time = int(time())
+            logger.info(f"Checking schedule statuses at {current_time}")
+            
+            # Find all schedules that might need status updates
+            schedules = list(database.schedules.find({
+                "status": {"$in": ["ready", "active"]}
+            }))
+            
+            for schedule in schedules:
+                schedule_id = str(schedule["_id"])
+                
+                # Check if schedule should be activated
+                if (schedule["status"] == "ready" and 
+                    schedule.get("time_start") and 
+                    schedule.get("time_end") and
+                    schedule["time_start"] <= current_time < schedule["time_end"]):
+                    
+                    # Activate schedule
+                    database.schedules.update_one(
+                        {"_id": schedule["_id"]}, 
+                        {"$set": {"status": "active", "updated_at": current_time}}
+                    )
+                    
+                    # Activate schedule PLC
+                    database.schedule_plc.update_one(
+                        {"schedule_id": schedule_id}, 
+                        {"$set": {"status": "active", "updated_at": current_time}}
+                    )
+                    
+                    logger.info(f"Activated schedule {schedule_id}: {schedule.get('name', 'Unknown')}")
+                
+                # Check if schedule should be completed
+                elif (schedule["status"] == "active" and 
+                      schedule.get("time_end") and
+                      current_time >= schedule["time_end"]):
+                    
+                    # Complete schedule
+                    database.schedules.update_one(
+                        {"_id": schedule["_id"]}, 
+                        {"$set": {"status": "completed", "updated_at": current_time}}
+                    )
+                    
+                    # Complete schedule PLC
+                    database.schedule_plc.update_one(
+                        {"schedule_id": schedule_id}, 
+                        {"$set": {"status": "completed", "updated_at": current_time}}
+                    )
+                    
+                    logger.info(f"Completed schedule {schedule_id}: {schedule.get('name', 'Unknown')}")
+            
+        except Exception as e:
+            logger.error(f"Error in schedule status check: {e}")
+            logger.error(traceback.format_exc())
+        
+        # Wait for 60 seconds before next check
+        await asyncio.sleep(60)
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    global mongodb_client, database
+    global mongodb_client, database, schedule_monitor_task
     mongodb_client = MongoClient("mongodb://gen_user:5LenbD*.Om!oP\@217.199.253.70:27017/default_db?authSource=admin&directConnection=true")
     database = mongodb_client.get_database("default_db")
     print(f"Connected to MongoDB at {mongodb_client}")
@@ -116,9 +180,17 @@ async def lifespan(app: FastAPI):
     # Initialize ESPHome and Midea devices
     await initialize_all_devices()
     
+    # Start schedule status monitoring task
+    schedule_monitor_task = asyncio.create_task(check_schedule_status())
+    logger.info("Schedule status monitor started")
+    
     yield
     
     # Shutdown
+    if schedule_monitor_task:
+        schedule_monitor_task.cancel()
+        logger.info("Schedule status monitor stopped")
+        
     if esphome_manager:
         await esphome_manager.disconnect_all()
         
@@ -253,6 +325,98 @@ async def apply_controller(chamber_id: str, controller: DefineController):
     
     return Response(status_code=200, content="Controller applied successfully")
 
+async def get_current_step(chamber_id: str) -> CurrentStep:
+    """Get current active step for the chamber"""
+    try:
+        current_time = int(time())
+        
+        # Find active schedule for the chamber
+        active_schedule_plc = database.schedule_plc.find_one({
+            "chamber_id": chamber_id,
+            "status": "active",
+            "time_start": {"$lte": current_time},
+            "time_end": {"$gte": current_time}
+        })
+        
+        if not active_schedule_plc:
+            return CurrentStep(is_active=False)
+        
+        # Get schedule details
+        schedule = database.schedules.find_one({"_id": ObjectId(active_schedule_plc["schedule_id"])})
+        if not schedule:
+            return CurrentStep(is_active=False)
+        
+        # Calculate elapsed time since schedule start
+        elapsed_time = current_time - active_schedule_plc["time_start"]
+        
+        # Find current step based on elapsed time
+        current_step = None
+        current_scenario_name = None
+        time_remaining = None
+        
+        # Go through schedule scenarios to find current step
+        total_elapsed = 0
+        scenario_steps = active_schedule_plc.get("scenarios", {})
+        
+        for scenario_idx_str, steps in scenario_steps.items():
+            scenario_idx = int(scenario_idx_str)
+            
+            # Get scenario info
+            if scenario_idx < len(schedule["scenarios"]):
+                scenario_id = schedule["scenarios"][scenario_idx]
+                scenario = database.scenarios.find_one({"_id": ObjectId(scenario_id)})
+                scenario_name = scenario["name"] if scenario else f"Scenario {scenario_idx}"
+            else:
+                scenario_name = f"Scenario {scenario_idx}"
+            
+            # Check each step in this scenario
+            for step in steps:
+                step_start = total_elapsed + step["relative_start_time"]
+                
+                # Find next step to calculate duration
+                next_step_start = None
+                remaining_steps = [s for s in steps if s["relative_start_time"] > step["relative_start_time"]]
+                if remaining_steps:
+                    next_step = min(remaining_steps, key=lambda x: x["relative_start_time"])
+                    next_step_start = total_elapsed + next_step["relative_start_time"]
+                else:
+                    # This is the last step in scenario, duration until scenario end
+                    # Assuming each scenario lasts 24 hours (86400 seconds) if not specified
+                    next_step_start = total_elapsed + 86400
+                
+                if step_start <= elapsed_time < next_step_start:
+                    current_step = step
+                    current_scenario_name = scenario_name
+                    time_remaining = next_step_start - elapsed_time
+                    break
+            
+            if current_step:
+                break
+            
+            # Move to next scenario (assuming 24 hours per scenario if not specified)
+            total_elapsed += 86400
+        
+        if not current_step:
+            return CurrentStep(is_active=False)
+        
+        return CurrentStep(
+            step_id=f"{active_schedule_plc['schedule_id']}_{elapsed_time}",
+            schedule_name=schedule["name"],
+            scenario_name=current_scenario_name,
+            temperature=current_step.get("temperature"),
+            humidity=current_step.get("humidity"),
+            co2=current_step.get("co2"),
+            light_sectors=current_step.get("light_sectors"),
+            relative_start_time=current_step.get("relative_start_time"),
+            time_remaining=time_remaining,
+            is_active=True
+        )
+        
+    except Exception as e:
+        logger.error(f"Error getting current step for chamber {chamber_id}: {e}")
+        logger.error(traceback.format_exc())
+        return CurrentStep(is_active=False)
+
 async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
     """Get dashboard data for a chamber from its ESPHome controllers"""
     try:
@@ -270,11 +434,15 @@ async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
         # Get ESPHome and Midea devices for this chamber
         esp_devices = await get_chamber_esphome_devices(controllers)
         midea_devices = await get_chamber_midea_devices(controllers)
+        
+        # Get current step information
+        current_step = await get_current_step(chamber_id)
 
         return DashboardState(
             chamber_id=chamber_id,
             esp_devices=esp_devices,
             midea_devices=midea_devices,
+            current_step=current_step,
             last_update=int(time()),
             auto_mode=True
         )
@@ -286,6 +454,7 @@ async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
             chamber_id=chamber_id,
             esp_devices=[],
             midea_devices=[],
+            current_step=CurrentStep(is_active=False),
             last_update=int(time()),
             auto_mode=True
         )
@@ -993,6 +1162,107 @@ def delete_scenario(scenario_id: str):
     except HTTPException:
         raise
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/schedules/status")
+async def get_schedules_status():
+    """Get status of all schedules with timing information"""
+    try:
+        current_time = int(time())
+        schedules = list(database.schedules.find())
+        
+        schedule_statuses = []
+        for schedule in schedules:
+            schedule_status = {
+                "id": str(schedule["_id"]),
+                "name": schedule.get("name", "Unknown"),
+                "status": schedule.get("status", "draft"),
+                "chamber_id": schedule.get("chamber_id"),
+                "time_start": schedule.get("time_start"),
+                "time_end": schedule.get("time_end"),
+                "current_time": current_time,
+                "created_at": schedule.get("created_at"),
+                "updated_at": schedule.get("updated_at")
+            }
+            
+            # Add time-based info
+            if schedule.get("time_start") and schedule.get("time_end"):
+                if current_time < schedule["time_start"]:
+                    schedule_status["time_until_start"] = schedule["time_start"] - current_time
+                elif schedule["time_start"] <= current_time < schedule["time_end"]:
+                    schedule_status["time_remaining"] = schedule["time_end"] - current_time
+                    schedule_status["time_elapsed"] = current_time - schedule["time_start"]
+                else:
+                    schedule_status["time_since_end"] = current_time - schedule["time_end"]
+            
+            schedule_statuses.append(schedule_status)
+        
+        return {"schedules": schedule_statuses, "current_time": current_time}
+        
+    except Exception as e:
+        logger.error(f"Error getting schedules status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/schedules/{schedule_id}/start")
+async def start_schedule_now(schedule_id: str):
+    """Start a schedule immediately for testing purposes"""
+    if not ObjectId.is_valid(schedule_id):
+        raise HTTPException(status_code=400, detail="Invalid schedule ID")
+    
+    try:
+        current_time = int(time())
+        
+        # Get schedule to calculate duration
+        schedule = database.schedules.find_one({"_id": ObjectId(schedule_id)})
+        if not schedule:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        
+        # Calculate duration based on scenario schedules
+        duration = 0
+        if schedule.get("schedule_scenarios"):
+            duration = sum(days[1] * 86400 for days in schedule["schedule_scenarios"])  # days * seconds per day
+        else:
+            duration = 86400  # Default 1 day
+        
+        time_end = current_time + duration
+        
+        # Update schedule status to active and set current time as start time
+        result = database.schedules.update_one(
+            {"_id": ObjectId(schedule_id)}, 
+            {"$set": {
+                "status": "active", 
+                "time_start": current_time,
+                "time_end": time_end,
+                "updated_at": current_time
+            }}
+        )
+        
+        # Update schedule PLC status to active and timing
+        plc_result = database.schedule_plc.update_one(
+            {"schedule_id": schedule_id}, 
+            {"$set": {
+                "status": "active", 
+                "time_start": current_time,
+                "time_end": time_end,
+                "updated_at": current_time
+            }}
+        )
+        
+        if result.modified_count > 0 or plc_result.modified_count > 0:
+            return {
+                "success": True, 
+                "message": "Schedule started",
+                "time_start": current_time,
+                "time_end": time_end,
+                "duration": duration
+            }
+        else:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error starting schedule: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

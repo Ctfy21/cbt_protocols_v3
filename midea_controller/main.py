@@ -238,10 +238,6 @@ async def execute_current_step():
     try:
         current_step = schedule_data.current_step
         
-        # TODO: Implement actual device control logic here
-        # For example:
-        # - Set temperature to current_step["temperature"]
-        
         logger.info(f"Executing step {current_step.index}: "
                    f"temp={current_step.temperature}")
 
@@ -272,15 +268,17 @@ async def schedule_timer():
             if data:
                 # Parse the data
                 parse_schedule_data(data)
-                
-                # Find and load current step
-                find_current_step()
-                
-                # Execute current step
-                await execute_current_step()
-            
+
         except Exception as e:
             logger.error(f"Error in schedule timer: {str(e)}")
+
+
+        # Find and load current step
+        find_current_step()
+
+        # Execute current step
+        await execute_current_step()
+        
         
         # Wait for 60 seconds
         await asyncio.sleep(60)

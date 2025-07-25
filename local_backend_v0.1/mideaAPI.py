@@ -60,10 +60,10 @@ class MideaController:
                 ip_address=ip_address,
                 status='online',
                 climate=Climate(
-                    temperature_inside=0.0,
-                    temperature_outside=0.0,
-                    temperature_set=20,
-                    fan_mode=0,
+                    indoor_temperature=0.0,
+                    outdoor_temperature=0.0,
+                    target_temperature=20,
+                    fan_speed=0,
                     mode='off'
                 )
             )
@@ -94,7 +94,7 @@ class MideaController:
             state = appliance.state
             self.device_states[device_id].update({
                 'target_temperature': getattr(state, 'target_temperature', None),
-                'fan_speed': getattr(state, 'fanspeed', None),
+                'fan_speed': getattr(state, 'fan_speed', None),
                 'mode': getattr(state, 'mode', None),
                 'indoor_temperature': getattr(state, 'indoor_temperature', None),
                 'outdoor_temperature': getattr(state, 'outdoor_temperature', None),
@@ -110,9 +110,10 @@ class MideaController:
                 
                 # Update climate data
                 if device.climate:
-                    device.climate.temperature_inside = float(getattr(state, 'indoor_temperature', 0))
-                    device.climate.temperature_set = int(getattr(state, 'target_temperature', 20))
-                    device.climate.fan_mode = int(getattr(state, 'fanspeed', 0))
+                    device.climate.indoor_temperature = float(getattr(state, 'indoor_temperature', 0))
+                    device.climate.outdoor_temperature = float(getattr(state, 'outdoor_temperature', 0))
+                    device.climate.target_temperature = int(getattr(state, 'target_temperature', 20))
+                    device.climate.fan_speed = int(getattr(state, 'fan_speed', 0))
                     
                     # Map mode to power mode
                     mode = getattr(state, 'mode', 0)
@@ -120,7 +121,7 @@ class MideaController:
                         device.climate.mode = 'auto'
                     elif mode == 2:
                         device.climate.mode = 'cool'
-                    elif mode == 3:
+                    elif mode == 4:
                         device.climate.mode = 'heat'
                     else:
                         device.climate.mode = 'cool'
@@ -275,8 +276,6 @@ async def initialize_midea_devices(ip_addresses: List[str]) -> None:
 async def get_chamber_midea_devices(chamber_controllers: List[Dict]) -> List[MideaDevice]:
     """Get Midea devices for a chamber"""
     midea_controllers = [c for c in chamber_controllers if c.get("controller_type") == "Midea"]
-
-    logger.info(f"Midea controllers: {midea_controllers}")
 
     devices = []
     for controller in midea_controllers:

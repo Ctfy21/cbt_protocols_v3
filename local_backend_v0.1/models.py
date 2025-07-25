@@ -172,10 +172,10 @@ class SwitchState(BaseModel):
     timestamp: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
 
 class Climate(BaseModel):
-    temperature_inside: float = Field()
-    temperature_outside: float = Field()
-    temperature_set: int = Field()
-    fan_mode: int = Field()
+    indoor_temperature: float = Field()
+    outdoor_temperature: float = Field()
+    target_temperature: int = Field()
+    fan_speed: int = Field()
     mode: Literal["off", "cool", "dry", "auto", "heat"] = Field()
 
 class Device(BaseModel):
@@ -192,10 +192,23 @@ class ESPHomeDevice(Device):
 class MideaDevice(Device):
     climate: Climate = Field(default=None)
 
+class CurrentStep(BaseModel):
+    step_id: Optional[str] = Field(default=None)
+    schedule_name: Optional[str] = Field(default=None)
+    scenario_name: Optional[str] = Field(default=None)
+    temperature: Optional[int] = Field(default=None)
+    humidity: Optional[int] = Field(default=None)
+    co2: Optional[int] = Field(default=None)
+    light_sectors: Optional[List[int]] = Field(default=None)
+    relative_start_time: Optional[int] = Field(default=None)
+    time_remaining: Optional[int] = Field(default=None, description="Seconds until next step")
+    is_active: bool = Field(default=False)
+
 class DashboardState(BaseModel):
     chamber_id: str = Field()
     esp_devices: List[ESPHomeDevice] = Field(default=[])
     midea_devices: List[MideaDevice] = Field(default=[])
+    current_step: Optional[CurrentStep] = Field(default=None)
     last_update: int = Field(default_factory=lambda: int(datetime.now().timestamp()))
     auto_mode: bool = Field(default=True)
 

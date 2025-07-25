@@ -42,19 +42,31 @@ interface ESPHomeDevice {
 }
 
 interface Climate {
-  temperature_inside: number
-  temperature_outside: number
-  humidity_inside: number
-  humidity_outside: number
-  co2_inside: number
-  co2_outside: number
-  light_inside: number
+  indoor_temperature: number
+  outdoor_temperature: number
+  target_temperature: number
+  fan_speed: number
+  mode: 'off' | 'cool' | 'dry' | 'auto' | 'heat'
+}
+
+interface CurrentStep {
+  step_id?: string
+  schedule_name?: string
+  scenario_name?: string
+  temperature?: number
+  humidity?: number
+  co2?: number
+  light_sectors?: number[]
+  relative_start_time?: number
+  time_remaining?: number
+  is_active: boolean
 }
 
 interface DashboardState {
   chamber_id: string
   esp_devices: ESPHomeDevice[]
   midea_devices: MideaDevice[]
+  current_step?: CurrentStep
   last_update: number
   auto_mode: boolean
 }
@@ -234,6 +246,64 @@ export function useDashboard() {
     }
   }
 
+  // Climate control API methods
+  const setMideaTemperature = async (deviceId: string, temperature: number) => {
+    try {
+      const response = await fetch(`${API_BASE}/midea/devices/${deviceId}/set_temperature?temperature=${temperature}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      return result
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Ошибка установки температуры'
+      console.error('Error setting temperature:', err)
+      throw err
+    }
+  }
+
+  const setMideaFanSpeed = async (deviceId: string, fanSpeed: number) => {
+    try {
+      const response = await fetch(`${API_BASE}/midea/devices/${deviceId}/set_fan_speed?fan_speed=${fanSpeed}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      return result
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Ошибка установки скорости вентилятора'
+      console.error('Error setting fan speed:', err)
+      throw err
+    }
+  }
+
+  const setMideaMode = async (deviceId: string, mode: number) => {
+    try {
+      const response = await fetch(`${API_BASE}/midea/devices/${deviceId}/set_mode?mode=${mode}`, {
+        method: 'POST',
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const result = await response.json()
+      return result
+    } catch (err) {
+      error.value = err instanceof Error ? err.message : 'Ошибка установки режима'
+      console.error('Error setting mode:', err)
+      throw err
+    }
+  }
+
   // Utility methods
   const getSensorIcon = (sensorType: string) => {
     const icons = {
@@ -273,6 +343,27 @@ export function useDashboard() {
     return 'online'
   }
 
+  const formatTimeRemaining = (seconds?: number) => {
+    if (!seconds || seconds <= 0) return 'N/A'
+    
+    const hours = Math.floor(seconds / 3600)
+    const minutes = Math.floor((seconds % 3600) / 60)
+    const secs = Math.floor(seconds % 60)
+    
+    if (hours > 0) {
+      return `${hours}ч ${minutes}м ${secs}с`
+    } else if (minutes > 0) {
+      return `${minutes}м ${secs}с`
+    } else {
+      return `${secs}с`
+    }
+  }
+
+  const formatLightSectors = (lightSectors?: number[]) => {
+    if (!lightSectors || lightSectors.length === 0) return 'N/A'
+    return lightSectors.map((intensity, index) => `S${index + 1}: ${intensity}%`).join(', ')
+  }
+
   // Initialize dashboard
   const initializeDashboard = async (chamberId: string) => {
     await fetchInitialState(chamberId)
@@ -308,7 +399,13 @@ export function useDashboard() {
     getSwitchIcon,
     formatTimestamp,
     getSensorStatus,
+    formatTimeRemaining,
+    formatLightSectors,
     connectToStream,
-    fetchInitialState
+    fetchInitialState,
+    // Climate control methods
+    setMideaTemperature,
+    setMideaFanSpeed,
+    setMideaMode
   }
 } 
