@@ -13,6 +13,8 @@ import asyncio
 import aiohttp
 import logging
 import re
+import traceback
+from midealocal.discover import discover
 from models import (
     Schedule, Scenario, Chamber, SchedulePLC, PLCStep, LightSector, WateringSector, 
     Utils, ControlMode, DefineController, EnvironmentParameters, EnvironmentControlSettings, 
@@ -98,6 +100,7 @@ async def initialize_all_devices():
         
     except Exception as e:
         logger.error(f"Error initializing devices: {e}")
+        logger.error(traceback.format_exc())
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -278,6 +281,7 @@ async def get_chamber_dashboard_data(chamber_id: str) -> DashboardState:
         
     except Exception as e:
         logger.error(f"Error getting dashboard data for chamber {chamber_id}: {e}")
+        logger.error(traceback.format_exc())
         return DashboardState(
             chamber_id=chamber_id,
             esp_devices=[],
@@ -428,6 +432,16 @@ async def get_all_esphome_devices():
         return {"devices": [device.model_dump() for device in devices]}
     except Exception as e:
         logger.error(f"Error getting ESPHome devices: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/midea/devices")
+async def get_all_midea_devices():
+    """Get all Midea devices status"""
+    try:
+        devices = await midea_manager.get_all_devices()
+        return {"devices": [device.model_dump() for device in devices]}
+    except Exception as e:
+        logger.error(f"Error getting Midea devices: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/esphome/devices/{device_name}/reconnect")

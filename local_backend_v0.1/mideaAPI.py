@@ -8,6 +8,8 @@ from models import DefineController, MideaDevice, Climate
 from time import time
 import traceback
 
+
+
 # Configure logging
 logger = logging.getLogger(__name__)
 
@@ -19,18 +21,20 @@ class MideaController:
         self.device_states: Dict[str, Dict] = {}
         self.state_callbacks: List[Callable] = []
         self.device_info: Dict[str, MideaDevice] = {}
+        self.token = "2ca510843ccf4c233e4ce8c177c8c9b4a79d967417bdb8307e47239bb4dd8918555a738d618431a15336d62abb79dc2472e0684c9779ca34b8e75978733975ab"
+        self.key = "1d69090b797d41e8a7c029810933725f62f64be143764abaaa6badbbf602fe88"
         
-    async def add_device(self, ip_address: str, device_name: str, token: str = None, key: str = None):
+    async def add_device(self, ip_address: str):
         """Add and connect to a Midea air conditioner device"""
         device_id = None
         try:
-            logger.info(f"Adding Midea device: {device_name} ({ip_address})")
+            logger.info(f"Adding Midea device: {ip_address}")
             
             # Create appliance connection
             appliance = appliance_state(
                 address=ip_address,
-                token=token,
-                key=key,
+                token=self.token,
+                key=self.key,
             )
             
             # Use IP as device_id for simplicity (could be improved)
@@ -52,7 +56,7 @@ class MideaController:
             # Store device info
             self.device_info[device_id] = MideaDevice(
                 device_id=device_id,
-                name=device_name,
+                name=appliance.name,
                 ip_address=ip_address,
                 status='online',
                 climate=Climate(
@@ -67,14 +71,11 @@ class MideaController:
             # Initial state refresh
             await self.refresh_device_state(device_id)
             
-            logger.info(f"Successfully added Midea device: {device_name}")
+            logger.info(f"Successfully added Midea device: {appliance.name}")
             return True
             
         except Exception as e:
-            error_msg = f"Error adding device {device_name}"
-            if device_id:
-                error_msg = f"Error adding device {device_name} (ID: {device_id})"
-            logger.error(f"{error_msg}: {e}")
+            logger.error(f"Error adding device: {e}")
             return False
     
     async def refresh_device_state(self, device_id: str):
@@ -264,50 +265,46 @@ class MideaController:
 # Global instance similar to ESPHome pattern
 midea_manager = MideaController()
 
-async def initialize_midea_devices(controllers: List[DefineController]) -> None:
+async def initialize_midea_devices(ip_addresses: List[str]) -> None:
     """Initialize Midea devices from controller configuration"""
-    for controller in controllers:
-        if controller.controller_type == "Midea":
+    for ip_address in ip_addresses:
             await midea_manager.add_device(
-                ip_address=controller.controller_ip,
-                device_name=controller.controller_name,
-                # These would need to be added to the DefineController model
-                # or obtained through discovery
-                token=getattr(controller.settings, 'token', None),
-                key=getattr(controller.settings, 'key', None)
+                ip_address=ip_address,
             )
 
-async def get_chamber_midea_devices(chamber_controllers: List[DefineController]) -> List[MideaDevice]:
+async def get_chamber_midea_devices(chamber_controllers: List[Dict]) -> List[MideaDevice]:
     """Get Midea devices for a chamber"""
-    midea_controllers = [c for c in chamber_controllers if c.controller_type == "Midea"]
-    
+    midea_controllers = [c for c in chamber_controllers if c.get("controller_type") == "Midea"]
+
+    logger.info(f"Midea controllers: {midea_controllers}")
+
     devices = []
     for controller in midea_controllers:
-        device_id = controller.controller_ip.replace('.', '_')
-        if device_id in midea_manager.device_info:
+        device_id = controller.get("controller_ip").replace('.', '_')
+        if midea_manager.device_info[device_id]:
             await midea_manager.refresh_device_state(device_id)
             devices.append(midea_manager.device_info[device_id])
     
     return devices
 
 
-def main():
-    # Example usage for testing
-    discovered_devices = discover()
-    ip_addresses = [i['ip_address'] for i in discovered_devices.values()]
+# def main():
+#     # Example usage for testing
+#     discovered_devices = discover()
+#     ip_addresses = [i['ip_address'] for i in discovered_devices.values()]
 
-    if ip_addresses:
-        appliance = appliance_state(
-            address=ip_addresses[0],  # APPLIANCE_IP_ADDRESS
-            token="2ca510843ccf4c233e4ce8c177c8c9b4a79d967417bdb8307e47239bb4dd8918555a738d618431a15336d62abb79dc2472e0684c9779ca34b8e75978733975ab",  # TOKEN obtained from Midea API
-            key="1d69090b797d41e8a7c029810933725f62f64be143764abaaa6badbbf602fe88",  # Token KEY obtained from Midea API
-        )
-        print("Current state:")
-        print(f"Target Temperature: {appliance.state.target_temperature}")
-        print(f"Fan Speed: {appliance.state.fanspeed}")
-        print(f"Mode: {appliance.state.mode}")
-        print(f"Power: {appliance.state.power}")
-        print(f"Indoor Temperature: {appliance.state.indoor_temperature}")
+#     if ip_addresses:
+#         appliance = appliance_state(
+#             address=ip_addresses[0],  # APPLIANCE_IP_ADDRESS
+#             token="2ca510843ccf4c233e4ce8c177c8c9b4a79d967417bdb8307e47239bb4dd8918555a738d618431a15336d62abb79dc2472e0684c9779ca34b8e75978733975ab",  # TOKEN obtained from Midea API
+#             key="1d69090b797d41e8a7c029810933725f62f64be143764abaaa6badbbf602fe88",  # Token KEY obtained from Midea API
+#         )
+#         print("Current state:")
+#         print(f"Target Temperature: {appliance.state.target_temperature}")
+#         print(f"Fan Speed: {appliance.state.fanspeed}")
+#         print(f"Mode: {appliance.state.mode}")
+#         print(f"Power: {appliance.state.power}")
+#         print(f"Indoor Temperature: {appliance.state.indoor_temperature}")
 
-if __name__ == "__main__":
-    main()
+# if __name__ == "__main__":
+#     main()
