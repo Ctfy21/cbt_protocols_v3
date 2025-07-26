@@ -13,7 +13,7 @@ from datetime import datetime
 from midea_beautiful import appliance_state
 from midealocal.discover import discover
 
-backend_ip = "192.168.53.230"
+backend_ip = "localhost"
 define_cond_ips = ["192.168.53.248"]
 key="1d69090b797d41e8a7c029810933725f62f64be143764abaaa6badbbf602fe88"
 token="2ca510843ccf4c233e4ce8c177c8c9b4a79d967417bdb8307e47239bb4dd8918555a738d618431a15336d62abb79dc2472e0684c9779ca34b8e75978733975ab"

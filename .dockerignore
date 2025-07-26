@@ -1,0 +1,66 @@
+# Git
+.git/
+.gitignore
+
+# Docker files
+**/Dockerfile*
+**/.dockerignore
+docker-compose*.yml
+
+# Documentation
+*.md
+DOCKER_README.md
+README.md
+
+# Environment files
+.env
+.env.*
+environment.example
+
+# Build and development files
+Makefile
+**/node_modules/
+**/dist/
+**/build/
+**/.vscode/
+**/.idea/
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/venv/
+**/.venv/
+**/env/
+
+# Logs and temporary files
+**/logs/
+**/*.log
+**/tmp/
+**/temp/
+
+# OS files
+.DS_Store
+**/Thumbs.db
+
+# Backup files
+backups/
+**/backup/
+**/*.backup
+
+# ESPHome specific
+esp_conf/
+**/*.yaml
+
+# Test files
+**/test/
+**/tests/
+**/*_test.py
+**/*.test.js
+
+# Coverage and analysis
+**/coverage/
+**/.coverage
+**/.pytest_cache/ 

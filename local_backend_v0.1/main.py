@@ -170,7 +170,7 @@ async def check_schedule_status():
 async def lifespan(app: FastAPI):
     # Startup
     global mongodb_client, database, schedule_monitor_task
-    mongodb_client = MongoClient("mongodb://gen_user:5LenbD*.Om!oP\@217.199.253.70:27017/default_db?authSource=admin&directConnection=true")
+    mongodb_client = MongoClient("mongodb://admin:Outrider4-foaming@mongodb:27017/default_db")
     database = mongodb_client.get_database("default_db")
     print(f"Connected to MongoDB at {mongodb_client}")
     

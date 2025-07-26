@@ -1,0 +1,138 @@
+# Development-specific docker-compose configuration
+services:
+  # MongoDB
+  mongodb:
+    image: mongo:7.0
+    container_name: cbt_mongodb_dev
+    hostname: mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=Outrider4-foaming
+      - MONGO_INITDB_DATABASE=cbt_db
+    volumes:
+      - mongodb_dev_data:/data/db
+      - mongodb_dev_config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - cbt_dev_network
+
+  # InfluxDB (same as production)
+  influxdb:
+    image: influxdb:2.7
+    container_name: cbt_influxdb_dev
+    hostname: influxdb
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=Outrider4-foaming
+      - DOCKER_INFLUXDB_INIT_ORG=cbt_org
+      - DOCKER_INFLUXDB_INIT_BUCKET=cbt_bucket
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=8zZtG6WoNU2nBfW/08I!m8N0LPmr6QIhZP-KRB7MY20BuNpyQYXO3gRjFzv=nHB9
+    # volumes:
+    #   - influxdb_dev_data:/var/lib/influxdb2
+    #   - influxdb_dev_config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    networks:
+      - cbt_dev_network
+
+#   # Backend with development settings
+#   backend:
+#     build:
+#       context: ./local_backend_v0.1
+#       dockerfile: Dockerfile
+#     container_name: cbt_backend_dev
+#     hostname: local_backend
+#     restart: unless-stopped
+#     ports:
+#       - "8000:8080"
+#     environment:
+#       - PYTHONUNBUFFERED=1
+#       - INFLUXDB_URL=http://influxdb:8086
+#       - INFLUXDB_TOKEN=8zZtG6WoNU2nBfW/08I!m8N0LPmr6QIhZP-KRB7MY20BuNpyQYXO3gRjFzv=nHB9
+#       - INFLUXDB_ORG=cbt_org
+#       - INFLUXDB_BUCKET=cbt_bucket
+#       - DEBUG=True
+#     volumes:
+#       - ./local_backend_v0.1:/app  # Mount source code for development
+#       - /app/__pycache__  # Exclude pycache
+#       - backend_dev_data:/app/data
+#       - ./local_backend_v0.1/logs:/app/logs
+#     depends_on:
+#       influxdb:
+#         condition: service_healthy
+#     networks:
+#       - cbt_dev_network
+
+#   # Development Frontend with hot reload
+#   frontend-dev:
+#     build:
+#       context: ./frontend
+#       dockerfile: Dockerfile.dev
+#     container_name: phytomanager
+#     restart: unless-stopped
+#     ports:
+#       - "5173:5173"
+#     environment:
+#       - VITE_API_BASE_URL=http://localhost:8000
+#       - VITE_HOT_RELOAD=true
+#     volumes:
+#       - ./frontend:/app
+#       - /app/node_modules
+#       - /app/dist
+#     networks:
+#       - cbt_dev_network
+
+#   # Midea Controller (same as production but with dev naming)
+#   midea-controller:
+#     build:
+#       context: ./midea_controller
+#       dockerfile: Dockerfile
+#     container_name: cbt_midea_controller_dev
+#     hostname: midea_controller
+#     restart: unless-stopped
+#     environment:
+#       - PYTHONUNBUFFERED=1
+#       - BACKEND_URL=http://localhost:8000
+#       - DEBUG=True
+#     volumes:
+#       - ./midea_controller:/app  # Mount source code for development
+#       - /app/__pycache__  # Exclude pycache
+#       - ./midea_controller/logs:/app/logs
+#     depends_on:
+#       - backend
+#     networks:
+#       - cbt_dev_network
+
+# Development-specific volumes
+volumes:
+  mongodb_dev_data:
+    driver: local
+  mongodb_dev_config:
+    driver: local
+  influxdb_dev_data:
+    driver: local
+  influxdb_dev_config:
+    driver: local
+  backend_dev_data:
+    driver: local
+
+# Development network
+networks:
+  cbt_dev_network:
+    driver: bridge
