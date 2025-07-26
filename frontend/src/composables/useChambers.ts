@@ -114,7 +114,7 @@ export function useChambers() {
       // Transform single chamber to array and normalize id
       const chamber = data._id ? { ...data, id: data._id } : data
       
-      // Ensure chamber has sum_sectors with default values
+      // Ensure chamber has sum_sectors with default values, but preserve existing data
       if (!chamber.sum_sectors) {
         chamber.sum_sectors = {
           temperature: { sectors: 1 },
@@ -123,18 +123,35 @@ export function useChambers() {
           light: { sectors: 1 },
           watering: { sectors: 1 }
         }
+      } else {
+        // Ensure each sector type exists with at least basic structure
+        if (!chamber.sum_sectors.temperature) chamber.sum_sectors.temperature = { sectors: 1 }
+        if (!chamber.sum_sectors.humidity) chamber.sum_sectors.humidity = { sectors: 1 }
+        if (!chamber.sum_sectors.co2) chamber.sum_sectors.co2 = { sectors: 1 }
+        if (!chamber.sum_sectors.light) chamber.sum_sectors.light = { sectors: 1 }
+        if (!chamber.sum_sectors.watering) chamber.sum_sectors.watering = { sectors: 1 }
       }
       
       chambers.value = [chamber]
       
       // Restore selected chamber from localStorage or auto-select first chamber
       const savedChamber = loadSelectedChamber()
+
+      
       if (savedChamber) {
         // Verify that the saved chamber still exists and update it with fresh data
         const freshChamber = chambers.value.find(c => c.id === savedChamber.id)
         if (freshChamber) {
-          selectedChamber.value = freshChamber
-          saveSelectedChamber(freshChamber) // Update saved data with fresh data
+          
+          // Check if the chamber was updated (compare updated_at timestamps)
+          if (savedChamber.updated_at !== freshChamber.updated_at) {
+            selectedChamber.value = freshChamber
+            saveSelectedChamber(freshChamber) // Save fresh data
+          } else {
+            // Chamber hasn't changed, use saved chamber but ensure we have fresh data
+            selectedChamber.value = freshChamber
+            saveSelectedChamber(freshChamber) // Update saved data with fresh data
+          }
         } else {
           // Saved chamber no longer exists, clear it
           clearSelection()

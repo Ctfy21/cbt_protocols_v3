@@ -312,7 +312,7 @@ async def apply_controller(chamber_id: str, controller: DefineController):
         )
     )
     
-    result = database.chambers.update_one({"_id": ObjectId(chamber_id)}, {"$set": {"is_active": True, "controllers": controllers_dict, "sum_sectors": new_sum_sectors.model_dump()}})
+    result = database.chambers.update_one({"_id": ObjectId(chamber_id)}, {"$set": {"is_active": True, "controllers": controllers_dict, "sum_sectors": new_sum_sectors.model_dump(), "updated_at": int(time())}})
     if result.modified_count == 0:
         raise HTTPException(status_code=500, detail="Failed to apply controller")
     
@@ -344,64 +344,84 @@ async def get_current_step(chamber_id: str) -> CurrentStep:
         # Get schedule details
         schedule = database.schedules.find_one({"_id": ObjectId(active_schedule_plc["schedule_id"])})
         if not schedule:
+            logger.error(f"Schedule not found for ID: {active_schedule_plc['schedule_id']}")
             return CurrentStep(is_active=False)
         
         # Calculate elapsed time since schedule start
         elapsed_time = current_time - active_schedule_plc["time_start"]
+        
+        # Get scenario steps from the schedule PLC
+        scenario_steps = active_schedule_plc.get("scenarios", {})
+        schedule_scenarios = active_schedule_plc.get("schedule_scenarios", [])
+        
+        if not scenario_steps:
+            logger.warning("No scenario steps found in schedule PLC")
+            return CurrentStep(is_active=False)
         
         # Find current step based on elapsed time
         current_step = None
         current_scenario_name = None
         time_remaining = None
         
-        # Go through schedule scenarios to find current step
+        # Calculate scenario durations based on schedule_scenarios
         total_elapsed = 0
-        scenario_steps = active_schedule_plc.get("scenarios", {})
         
-        for scenario_idx_str, steps in scenario_steps.items():
-            scenario_idx = int(scenario_idx_str)
+        # Process schedule_scenarios to get proper durations
+        # schedule_scenarios format: [[scenario_index, days_count], ...]
+        for schedule_scenario in schedule_scenarios:
+            if len(schedule_scenario) < 2:
+                continue
+                
+            scenario_idx = schedule_scenario[0]
+            days_count = schedule_scenario[1]
+            scenario_duration = days_count * 86400  # days to seconds
             
-            # Get scenario info
-            if scenario_idx < len(schedule["scenarios"]):
+            # Get scenario info from schedule
+            scenario_name = f"Scenario {scenario_idx}"
+            if scenario_idx < len(schedule.get("scenarios", [])):
                 scenario_id = schedule["scenarios"][scenario_idx]
                 scenario = database.scenarios.find_one({"_id": ObjectId(scenario_id)})
-                scenario_name = scenario["name"] if scenario else f"Scenario {scenario_idx}"
-            else:
-                scenario_name = f"Scenario {scenario_idx}"
+                if scenario:
+                    scenario_name = scenario.get("name", scenario_name)
             
-            # Check each step in this scenario
-            for step in steps:
-                step_start = total_elapsed + step["relative_start_time"]
+            # Check if elapsed time falls within this scenario
+            if total_elapsed <= elapsed_time < total_elapsed + scenario_duration:
                 
-                # Find next step to calculate duration
-                next_step_start = None
-                remaining_steps = [s for s in steps if s["relative_start_time"] > step["relative_start_time"]]
-                if remaining_steps:
-                    next_step = min(remaining_steps, key=lambda x: x["relative_start_time"])
-                    next_step_start = total_elapsed + next_step["relative_start_time"]
+                # Get steps for this scenario
+                scenario_key = str(scenario_idx)
+                if scenario_key in scenario_steps:
+                    steps = scenario_steps[scenario_key]
+                    scenario_elapsed = elapsed_time - total_elapsed
+                    
+                    # Find current step within this scenario
+                    for i, step in enumerate(steps):
+                        step_start = step.get("relative_start_time", 0)
+                        
+                        # Calculate step end time
+                        if i + 1 < len(steps):
+                            next_step_start = steps[i + 1].get("relative_start_time", scenario_duration)
+                        else:
+                            next_step_start = scenario_duration
+                        
+                        if step_start <= scenario_elapsed < next_step_start:
+                            current_step = step
+                            current_scenario_name = scenario_name
+                            time_remaining = next_step_start - scenario_elapsed
+                            break
+                    
+                    if current_step:
+                        break
                 else:
-                    # This is the last step in scenario, duration until scenario end
-                    # Assuming each scenario lasts 24 hours (86400 seconds) if not specified
-                    next_step_start = total_elapsed + 86400
-                
-                if step_start <= elapsed_time < next_step_start:
-                    current_step = step
-                    current_scenario_name = scenario_name
-                    time_remaining = next_step_start - elapsed_time
-                    break
+                    logger.warning(f"No steps found for scenario key: {scenario_key}")
             
-            if current_step:
-                break
-            
-            # Move to next scenario (assuming 24 hours per scenario if not specified)
-            total_elapsed += 86400
+            total_elapsed += scenario_duration
         
         if not current_step:
             return CurrentStep(is_active=False)
         
-        return CurrentStep(
+        result = CurrentStep(
             step_id=f"{active_schedule_plc['schedule_id']}_{elapsed_time}",
-            schedule_name=schedule["name"],
+            schedule_name=schedule.get("name", "Unknown Schedule"),
             scenario_name=current_scenario_name,
             temperature=current_step.get("temperature"),
             humidity=current_step.get("humidity"),
@@ -411,6 +431,8 @@ async def get_current_step(chamber_id: str) -> CurrentStep:
             time_remaining=time_remaining,
             is_active=True
         )
+        
+        return result
         
     except Exception as e:
         logger.error(f"Error getting current step for chamber {chamber_id}: {e}")
@@ -465,7 +487,6 @@ async def dashboard_event_generator(chamber_id: str) -> AsyncGenerator[str, None
         while True:
             # Get updated dashboard state from ESPHome controllers
             dashboard_state = await get_chamber_dashboard_data(chamber_id)
-            
             # Update cached state
             dashboard_states[chamber_id] = dashboard_state
             
@@ -776,6 +797,8 @@ def create_schedule(schedule: Schedule):
                         if param_types and len(param_types) > 0:
                             # Use types as sector IDs for light, numbered IDs for others
                             if param_name == "light":
+                                sector_list = param_types
+                            elif param_name == "watering":
                                 sector_list = param_types
                             else:
                                 sector_list = [str(i) for i in range(1, sectors_count + 1)]

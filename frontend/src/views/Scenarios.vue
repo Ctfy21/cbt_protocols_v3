@@ -212,7 +212,7 @@
                     <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-r">Влажность (%)</th>
                     <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-r">CO₂ (ppm)</th>
                     <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-r">Освещение (сектора)</th>
-                    <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Полив (мин)</th>
+                    <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">Полив (сек)</th>
                   </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
@@ -360,9 +360,13 @@
                         Полив<br/>активен
                       </th>
                       <!-- Dynamic Watering Sectors Headers -->
-                      <th v-for="n in wateringSectorsCount" :key="`watering-${n}`" 
+                      <th v-for="(wateringType, index) in getWateringSectorHeaders()" 
+                          :key="`watering-${wateringType.id}`" 
                           class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase border-r">
-                        Полив {{ n }}<br/>(мин)
+                        Полив<br/>
+                        <span class="text-xs normal-case">
+                          ({{ wateringType.name }})
+                        </span>
                       </th>
                       <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">
                         Действия
@@ -419,11 +423,12 @@
                                :class="param.watering_enabled ? 'text-blue-600' : 'text-gray-400'">
                       </td>
                       <!-- Dynamic Watering Sectors Inputs -->
-                      <td v-for="n in wateringSectorsCount" :key="`watering-input-${n}`" 
+                      <td v-for="(wateringType, sectorIndex) in getWateringSectorHeaders()" 
+                          :key="`watering-input-${wateringType.id}`" 
                           class="px-3 py-2 text-center border-r">
                         <input type="number" 
-                               :value="getWateringSectorValue(param, n-1)"
-                               @input="updateWateringSectorValue(param, n-1, ($event.target as HTMLInputElement)?.value)"
+                               :value="getWateringSectorValue(param, wateringType.id)"
+                               @input="updateWateringSectorValue(param, wateringType.id, ($event.target as HTMLInputElement)?.value)"
                                class="w-20 text-center border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 rounded-md text-sm py-1"
                                :class="param.watering_enabled ? '' : 'bg-gray-100 text-gray-400 cursor-not-allowed'"
                                :disabled="!param.watering_enabled"
@@ -834,14 +839,27 @@ const createLightSectors = (existingSectors: LightSector[]): LightSector[] => {
 
 const createWateringSectors = (existingSectors: WateringSector[]): WateringSector[] => {
   const sectors: WateringSector[] = []
-  const currentCount = wateringSectorsCount.value
+  const wateringTypesArray = selectedChamber.value?.sum_sectors?.watering?.types || []
   
-  for (let i = 1; i <= currentCount; i++) {
-    const existing = existingSectors.find(s => s.sector_id === i.toString())
-    sectors.push({
-      sector_id: i.toString(),
-      watering_duration: existing?.watering_duration || 0
+  // Use watering types as sector_id, fallback to numbers if no types
+  if (wateringTypesArray.length > 0) {
+    wateringTypesArray.forEach(wateringType => {
+      const existing = existingSectors.find(s => s.sector_id === wateringType)
+      sectors.push({
+        sector_id: wateringType,
+        watering_duration: existing?.watering_duration || 0
+      })
     })
+  } else {
+    // Fallback to numbered sectors if no types available
+    const currentCount = wateringSectorsCount.value
+    for (let i = 1; i <= currentCount; i++) {
+      const existing = existingSectors.find(s => s.sector_id === i.toString())
+      sectors.push({
+        sector_id: i.toString(),
+        watering_duration: existing?.watering_duration || 0
+      })
+    }
   }
   
   return sectors
@@ -890,6 +908,25 @@ const getLightSectorHeaders = () => {
   }
 }
 
+// Helper function to get watering sector headers with types
+const getWateringSectorHeaders = () => {
+  const wateringTypes = selectedChamber.value?.sum_sectors?.watering?.types || []
+  
+  if (wateringTypes.length > 0) {
+    return wateringTypes.map(type => ({
+      id: type,
+      name: type
+    }))
+  } else {
+    // Fallback to numbered sectors
+    const count = wateringSectorsCount.value
+    return Array.from({ length: count }, (_, i) => ({
+      id: (i + 1).toString(),
+      name: `Сектор ${i + 1}`
+    }))
+  }
+}
+
 // Helper function to get light sector value
 const getLightSectorValue = (param: Parameters, sectorId: string): number => {
   const sector = param.light_sectors.find(s => s.sector_id === sectorId)
@@ -906,16 +943,17 @@ const updateLightSectorValue = (param: Parameters, sectorId: string, value: stri
 }
 
 // Helper function to get watering sector value
-const getWateringSectorValue = (param: Parameters, sectorIndex: number): number => {
-  const sector = param.watering_sectors[sectorIndex]
+const getWateringSectorValue = (param: Parameters, sectorId: string): number => {
+  const sector = param.watering_sectors.find(s => s.sector_id === sectorId)
   return sector ? sector.watering_duration : 0
 }
 
 // Helper function to update watering sector value
-const updateWateringSectorValue = (param: Parameters, sectorIndex: number, value: string | number) => {
+const updateWateringSectorValue = (param: Parameters, sectorId: string, value: string | number) => {
   const numValue = typeof value === 'string' ? parseInt(value) || 0 : value
-  if (param.watering_sectors[sectorIndex]) {
-    param.watering_sectors[sectorIndex].watering_duration = numValue
+  const sector = param.watering_sectors.find(s => s.sector_id === sectorId)
+  if (sector) {
+    sector.watering_duration = numValue
   }
 }
 
